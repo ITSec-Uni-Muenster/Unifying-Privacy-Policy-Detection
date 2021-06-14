@@ -1,6 +1,6 @@
 # Unifying Privacy Policy Toolchain
 
-This is the accompanying repository for the "Unifying Privacy Policy Detection" paper which was published in the [Privacy Enhancing Technology Symposium (PETS) 2021](https://petsymposium.org/2021/paperlist.php).
+This is the accompanying repository for the "Unifying Privacy Policy Detection" paper which was published in the [Pri­va­cy En­han­cing Tech­no­lo­gies Sym­po­si­um (PETS) 2021](https://petsymposium.org/2021/paperlist.php).
 
 The aim of this project is to support privacy policy researchers with a unified solution for creating privacy policy corpora. 
 

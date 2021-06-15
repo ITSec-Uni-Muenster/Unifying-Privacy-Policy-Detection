@@ -65,7 +65,7 @@ spacy_languages = {
 }
 
 data_dir = "../data/"
-crawl_date = "2021-01-01" # Adapt this
+crawl_date = "2021-01-01" # Adapt this based on your requirements
 
 def load_data_of_text_policies(db, language=None):
     policies_table = db.table("policies")
@@ -329,7 +329,6 @@ def text_extraction_module():
                 "Plain_Text_Readability": ""
             }
         )
-
     db.close()
 
 
@@ -338,7 +337,7 @@ def language_detection_module():
 
     def language_detection(text):
 
-        ## load stuff ##
+        ## prepare components ##
         DetectorFactory.seed = 0
         
         fasttext_model = fasttext.load_model("resources/lid.176.bin")
@@ -494,6 +493,12 @@ def language_detection_module():
             else:
                 multilingual = False
 
+            # possibility for superflous strings as described in the paper
+            if len(set(list_of_all_detected_languages))==1 and multilingual==True:
+                recheck = True # check whether CanolaExtractor or Readability.js provide purer results
+            else:
+                recheck = False
+
         else:
             determined_language = "too-short-text"
             dict_of_detected_languages = {}
@@ -505,6 +510,7 @@ def language_detection_module():
             dict_of_detected_languages,
             dict_of_detection_probabilies,
             multilingual,
+            recheck
         )
 
     print("Start time: ", str(datetime.datetime.now()))
@@ -528,6 +534,8 @@ def language_detection_module():
     list_of_dicts_with_all_detected_languages = [item[1] for item in res]
     list_of_dicts_with_detection_probabilities = [item[2] for item in res]
     list_of_multilingual_booleans = [item[3] for item in res]
+    list_of_rechecks_booleans = [item[4] for item in res]
+
     del res
 
     print(
@@ -536,14 +544,15 @@ def language_detection_module():
         )
     )
 
-    for id, language, multilingual in zip(
-        list_of_ids, list_of_determined_languages, list_of_multilingual_booleans
+    for id, language, multilingual, recheck in zip(
+        list_of_ids, list_of_determined_languages, list_of_multilingual_booleans, list_of_rechecks_booleans
     ):
         language_table.upsert(
             {
                 "Text_ID": id,
                 "DeterminedLanguage": language,
                 "Multilingual": multilingual,
+                "Recheck": recheck
             }
         )
 

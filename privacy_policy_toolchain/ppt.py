@@ -20,6 +20,7 @@ import traceback
 from joblib import Parallel, delayed, load
 from tqdm import tqdm
 from boilerpipe.extract import Extractor
+from readabilipy import simple_json_from_html_string
 from tqdm import tqdm, trange
 import pandas as pd
 
@@ -209,7 +210,7 @@ def text_extraction_module():
             print(traceback.format_exc())
         return raw_html
 
-    def text_from_html_extraction(raw_html):
+    def text_from_html_extraction_numwordsrules(raw_html):
         text = ""
         if raw_html:
             """remove html with different settings of boilerpipe
@@ -220,6 +221,33 @@ def text_extraction_module():
                 text = str(extractor.getText())
             except:
                 print(traceback.format_exc())
+        return text
+
+    def text_from_html_extraction_canola(raw_html):
+        text = ""
+        if raw_html:
+            """remove html with different settings of boilerpipe
+            https://github.com/misja/python-boilerpipe
+            """
+            try:
+                extractor = Extractor(extractor="CanolaExtractor", html=raw_html)
+                text = str(extractor.getText())
+            except:
+                print(traceback.format_exc())
+        return text
+
+    def text_from_html_extraction_readability(raw_html):
+        text = ""
+        result = simple_json_from_html_string(raw_html, use_readability=True)
+        try:
+            excerpt = result["excerpt"]
+        except KeyError:
+            excerpt = ""
+        try:
+            plain_text = result["textContent"]
+        except KeyError:
+            plain_text = ""
+        text = excerpt + "\n\n" + plain_text
         return text
 
     def text_from_pdf_extractor(pdf_path):
@@ -254,22 +282,33 @@ def text_extraction_module():
         for page_path in tqdm(list_of_page_paths, desc="Encoding Detection")
     )
     assert len(list_of_raw_html_pages) == len(list_of_page_paths) == len(html_pages)
-    list_of_plain_texts = Parallel(n_jobs=-1)(
-        delayed(text_from_html_extraction)(raw_html)
-        for raw_html in tqdm(list_of_raw_html_pages, desc="HTML Text Extraction")
+    list_of_plain_texts_numwordsrules = Parallel(n_jobs=-1)(
+        delayed(text_from_html_extraction_numwordsrules)(raw_html)
+        for raw_html in tqdm(list_of_raw_html_pages, desc="Text Extraction NumWordsRules")
     )
-    assert len(list_of_plain_texts) == len(html_pages) == len(list_of_raw_html_pages)
+    list_of_plain_texts_canola = Parallel(n_jobs=-1)(
+        delayed(text_from_html_extraction_canola)(raw_html)
+        for raw_html in tqdm(list_of_raw_html_pages, desc="HTML Text Extraction Canola")
+    )
+    list_of_plain_texts_readability = Parallel(n_jobs=-1)(
+        delayed(text_from_html_extraction_readability)(raw_html)
+        for raw_html in tqdm(list_of_raw_html_pages, desc="HTML Text Extraction Readability")
+    )
+    assert len(list_of_plain_texts_numwordsrules) == len(list_of_plain_texts_canola) == len(list_of_plain_texts_readability) == len(html_pages) == len(list_of_raw_html_pages)
 
     for i, (plain_text, raw_html) in enumerate(
-        zip(list_of_plain_texts, list_of_raw_html_pages)
+        zip(list_of_plain_texts_numwordsrules, list_of_raw_html_pages)
     ):
         table.upsert(
             {
                 "Text_ID": "HTML_" + str(i),
                 "Crawl": crawl_date,
                 "URL": html_pages[i],
-                "Raw_HTML": raw_html,
+                "Raw": raw_html,
                 "Plain_Text": plain_text,
+                "Plain_Text_Canola":list_of_plain_texts_canola[i],
+                "Plain_Text_Readability": list_of_plain_texts_readability[i]
+
             }
         )
 
@@ -284,8 +323,10 @@ def text_extraction_module():
                 "Text_ID": "PDF_" + str(i),
                 "Crawl": crawl_date,
                 "URL": pdf_filename,
-                "Raw_HTML": "PDF",
+                "Raw": "PDF",
                 "Plain_Text": plain_text,
+                "Plain_Text_Canola":"",
+                "Plain_Text_Readability": ""
             }
         )
 
@@ -332,7 +373,7 @@ def language_detection_module():
 
             # 2. https://github.com/aboSamoor/pycld2
             try:
-                isReliable, textBytesFound, details, vectors = cld2.detect(
+                isReliable, _, details, vectors = cld2.detect(
                     raw_text, returnVectors=True
                 )
                 if isReliable:

@@ -1,19 +1,19 @@
-# Unifying Privacy Policy Toolchain
+# Unifying Privacy Policy Detection Toolchain
 
-This is the accompanying repository for the "Unifying Privacy Policy Detection" paper which was published in the [Pri­va­cy En­han­cing Tech­no­lo­gies Sym­po­si­um (PETS) 2021](https://petsymposium.org/2021/paperlist.php).
+This is the accompanying repository for the "Unifying Privacy Policy Detection" paper published in the [Pri­va­cy En­han­cing Tech­no­lo­gies Sym­po­si­um (PETS) 2021](https://petsymposium.org/2021/paperlist.php).
 
-The aim of this project is to support privacy policy researchers with a unified solution for creating privacy policy corpora. 
+The aim of this project is to support privacy policy researchers with a unified solution for creating privacy policy corpora based on currently available best-practices. 
 
-At the moment, we have uploaded the source code as a proof of concept, according with the trained classifiers and vectorizers in English and German. However, we are aiming to provide a pip package as soon as possible in order to ease the application of this toolchain. 
+At the moment, we have uploaded the source code as a proof of concept, according with the trained classifiers and vectorizers in English and German. We are planning to provide a pip package as soon as possible in order to ease the application of this toolchain. 
 
 ## Environment Setup
 
-We use Anaconda on Ubuntu 20.04 in order to create the Python environment. To setup the environment, please follow the instructions as provided below:
+We use [Anaconda](https://docs.anaconda.com/anaconda/install/linux/) on Ubuntu 20.04 in order to create the Python environment. Please ensure that you have Java installed. To setup the environment, please follow the instructions as provided below:
 
 ```
 conda create -n pptc python=3.6.11 pip
 conda activate pptc
-conda env create -f environment.yml
+conda env update -f environment.yml
 
 ```
 
@@ -34,7 +34,7 @@ The toolchain consists of five steps:
 5. Classification
 
 
-Currently, the tool saves the data and according metadata in a [TinyDB](https://tinydb.readthedocs.io/en/latest/) database, which offers benefits such as potability and simplicity. If a different data storage format is required, the code can be adapted easily due to its modular design. If you have any questions about how to work with the code or regarding replication of our results, feel free to contact us.
+The tool expects a path like `data` followed by a folder named with, e.g., the date of the crawl, which contains the rawl HTML/XML files of the respecting crawl. The tool reads these files and saves the data and according metadata in a [TinyDB](https://tinydb.readthedocs.io/en/latest/) database, which offers benefits such as potability and simplicity. If a different data storage format is required, the code can be adapted easily due to its modular design. If you have any questions about how to work with the code or regarding replication of our results, feel free to contact us.
 
 ## Structure of the repository
 The current structure of the repository is depicted as follows:

@@ -335,6 +335,19 @@ def text_extraction_module():
 def language_detection_module():
     """Performs majority voting on the detected languages by the libraries"""
 
+    def segment_multilingual_policies(vectors, text):
+        """segments privacy policies by language if desired
+            by using the output vectors of CLD2
+        """
+        list_of_segments = []
+        text_as_bytes = text.encode("utf-8")
+        for vector in vectors:
+            start = vector[0]
+            end = start + vector[1]
+            segment = text_as_bytes[start:end].decode("utf-8")
+            list_of_segments.append(segment)
+        return list_of_segments
+
     def language_detection(text):
 
         ## prepare components ##

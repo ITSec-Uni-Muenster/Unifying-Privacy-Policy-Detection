@@ -11,7 +11,7 @@ At the moment, we have uploaded the source code as a proof of concept, according
 We use [Anaconda](https://docs.anaconda.com/anaconda/install/linux/) on Ubuntu 20.04 in order to create the Python environment. Please ensure that you have Java installed. To setup the environment, please follow the instructions as provided below:
 
 ```
-conda create -n pptc python=3.6.11 pip
+conda create -n pptc python=3.6 pip
 conda activate pptc
 conda env update -f environment.yml
 

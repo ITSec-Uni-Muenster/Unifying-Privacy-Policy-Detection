@@ -80,21 +80,21 @@ class FindPrivacyPolicyCommand(BaseCommand):
             return "javascript"
         else:
             driver.get(url)
-
+            filename = self.url2filename(site + "_" + url)
             # Download privacy policies if they are files, otherwise store the content
             if url.endswith("pdf") or url.endswith("doc") or url.endswith("docx") or url.endswith("odt"):
                 r = requests.get(url, stream=True)
                 
-                with open(path + "/privacy_policies/" + self.url2filename(site + url), 'wb') as file:
+                with open(path + "/privacy_policies/" + filename, 'wb') as file:
                     file.write(r.content)
                 file.close()
             else:
                 src = driver.execute_script("return document.getElementsByTagName('html')[0].outerHTML")
                 allhtml = str(src)
-                with open(path + "/privacy_policies/" + self.url2filename(site + url), 'w+') as file:
+                with open(path + "/privacy_policies/" + filename, 'w+') as file:
                     file.write(allhtml)
                 file.close()
-            return path + "/privacy_policies/" + self.url2filename(site + url)
+            return path + "/privacy_policies/" + filename
 
     def modify_relative_urls(self, privacy_url, url):
         try:

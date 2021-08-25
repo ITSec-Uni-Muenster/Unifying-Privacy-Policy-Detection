@@ -271,10 +271,10 @@ def text_extraction_module():
     html_pages = [page for page in pages if os.path.splitext(page)[1] not in {".pdf"}]
     pdf_files = [page for page in pages if os.path.splitext(page)[1] in {".pdf"}]
     list_of_page_paths = [
-        os.path.join(data_dir, "raw", page) for page in html_pages
+        os.path.join(data_dir, crawl_date, page) for page in html_pages
     ]
     list_of_pdf_paths = [
-        os.path.join(data_dir, "raw", page) for page in pdf_files
+        os.path.join(data_dir, crawl_date, page) for page in pdf_files
     ]
 
     list_of_raw_html_pages = Parallel(n_jobs=-1)(

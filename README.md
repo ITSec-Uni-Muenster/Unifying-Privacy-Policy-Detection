@@ -23,7 +23,12 @@ Having setup the Python environment, we also need to download a [trained model](
 wget https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin -P ./resources
 
 ```
+For spacy, we need to install the necessary models:
 
+```
+python -m spacy download en_core_web_lg
+python -m spacy download de_core_news_lg
+```
 
 ## Explanation
 The toolchain consists of five steps:

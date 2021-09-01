@@ -9,6 +9,7 @@ import re
 from collections import Counter
 from pprint import pprint
 from pathlib import Path
+from urllib import request
 
 from tinydb import TinyDB
 from tinydb import where as tinydb_where
@@ -65,7 +66,9 @@ spacy_languages = {
 }
 
 data_dir = "../data/"
-crawl_date = "2021-01-01" # Adapt this based on your requirements
+
+# The subfolder of the data folder should be named after the date of the crawl. 
+crawl_date = sys.argv[1]
 
 def load_data_of_text_policies(db, language=None):
     policies_table = db.table("policies")
@@ -213,7 +216,7 @@ def text_extraction_module():
     def text_from_html_extraction_numwordsrules(raw_html):
         text = ""
         if raw_html:
-            """remove html with different settings of boilerpipe
+            """Remove HTML/XML using NumWordsRules setting of Boilerpipe
             https://github.com/misja/python-boilerpipe
             """
             try:
@@ -226,7 +229,7 @@ def text_extraction_module():
     def text_from_html_extraction_canola(raw_html):
         text = ""
         if raw_html:
-            """remove html with different settings of boilerpipe
+            """Remove HTML/XML using Conola settings of Boilerpipe
             https://github.com/misja/python-boilerpipe
             """
             try:
@@ -238,16 +241,24 @@ def text_extraction_module():
 
     def text_from_html_extraction_readability(raw_html):
         text = ""
+        """
+        remove HTML/XML with 
+        https://github.com/alan-turing-institute/ReadabiliPy
+        """
         result = simple_json_from_html_string(raw_html, use_readability=True)
         try:
-            excerpt = result["excerpt"]
-        except KeyError:
-            excerpt = ""
+            title = result["title"]
+            if title is None:
+                title = ""
+        except:
+            title = ""
         try:
-            plain_text = result["textContent"]
-        except KeyError:
+            plain_text = result["plain_text"][-1]["text"]
+            if plain_text is None:
+                plain_text = ""
+        except:
             plain_text = ""
-        text = excerpt + "\n\n" + plain_text
+        text = title + "\n\n" + plain_text
         return text
 
     def text_from_pdf_extractor(pdf_path):
@@ -266,15 +277,14 @@ def text_extraction_module():
         storage=CachingMiddleware(JSONStorage),
     )
     table = db.table("policies")
-
-    pages = os.listdir(data_dir + "/" +  crawl_date)
+    pages = os.listdir(data_dir + "privacy_policies/" +  crawl_date)
     html_pages = [page for page in pages if os.path.splitext(page)[1] not in {".pdf"}]
     pdf_files = [page for page in pages if os.path.splitext(page)[1] in {".pdf"}]
     list_of_page_paths = [
-        os.path.join(data_dir, crawl_date, page) for page in html_pages
+        os.path.join(data_dir, "privacy_policies", crawl_date, page) for page in html_pages
     ]
     list_of_pdf_paths = [
-        os.path.join(data_dir, crawl_date, page) for page in pdf_files
+        os.path.join(data_dir, "privacy_policies", crawl_date, page) for page in pdf_files
     ]
 
     list_of_raw_html_pages = Parallel(n_jobs=-1)(
@@ -290,16 +300,16 @@ def text_extraction_module():
         delayed(text_from_html_extraction_canola)(raw_html)
         for raw_html in tqdm(list_of_raw_html_pages, desc="HTML Text Extraction Canola")
     )
-    list_of_plain_texts_readability = Parallel(n_jobs=-1)(
+    list_of_plain_texts_readability = Parallel(n_jobs=1)(
         delayed(text_from_html_extraction_readability)(raw_html)
         for raw_html in tqdm(list_of_raw_html_pages, desc="HTML Text Extraction Readability")
     )
     assert len(list_of_plain_texts_numwordsrules) == len(list_of_plain_texts_canola) == len(list_of_plain_texts_readability) == len(html_pages) == len(list_of_raw_html_pages)
 
     for i, (plain_text, raw_html) in enumerate(
-        zip(list_of_plain_texts_numwordsrules, list_of_raw_html_pages)
+        zip(list_of_plain_texts_numwordsrules, list_of_raw_html_pages), start=len(table)
     ):
-        table.upsert(
+        table.insert(
             {
                 "Text_ID": "HTML_" + str(i),
                 "Crawl": crawl_date,
@@ -317,8 +327,9 @@ def text_extraction_module():
         for pdf_file_path in tqdm(list_of_pdf_paths, desc="PDF Text Extraction")
     )
     assert len(list_of_plain_texts) == len(list_of_pdf_paths) == len(pdf_files)
-    for i, (plain_text, pdf_filename) in enumerate(zip(list_of_plain_texts, pdf_files)):
-        table.upsert(
+
+    for i, (plain_text, pdf_filename) in enumerate(zip(list_of_plain_texts, pdf_files), start=len(table)):
+        table.insert(
             {
                 "Text_ID": "PDF_" + str(i),
                 "Crawl": crawl_date,
@@ -352,7 +363,7 @@ def language_detection_module():
 
         ## prepare components ##
         DetectorFactory.seed = 0
-        
+
         fasttext_model = fasttext.load_model("resources/lid.176.bin")
 
         word_re = re.compile(
@@ -508,7 +519,7 @@ def language_detection_module():
 
             # possibility for superflous strings as described in the paper
             if len(set(list_of_all_detected_languages))==1 and multilingual==True:
-                recheck = True # check whether CanolaExtractor or Readability.js provide purer results
+                recheck = True # Mark to check whether CanolaExtractor or Readability.js could provide purer plain text
             else:
                 recheck = False
 
@@ -517,6 +528,7 @@ def language_detection_module():
             dict_of_detected_languages = {}
             dict_of_detection_probabilies = {}
             multilingual = False
+            recheck = False
 
         return (
             determined_language,
@@ -534,6 +546,13 @@ def language_detection_module():
     language_table = db.table("policies_language")
 
     list_of_texts, list_of_ids = load_data_of_text_policies(db, language=None)
+
+    if not os.path.exists("resources/lid.176.bin"):
+        Path("../resources/").mkdir(parents=True, exist_ok=True)
+
+        print("Downloading language model of FastText ...")
+        request.urlretrieve("https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin", "resources/lid.176.bin")
+
 
     print("Start language detection")
     res = Parallel(n_jobs=-1)(
@@ -566,7 +585,7 @@ def language_detection_module():
                 "DeterminedLanguage": language,
                 "Multilingual": multilingual,
                 "Recheck": recheck
-            }
+            }, tinydb_where("Text_ID") == id
         )
 
     df = pd.DataFrame(list_of_determined_languages, columns=["DeterminedLanguage"])
@@ -692,7 +711,7 @@ def keyphrase_extraction_module():
 
     def textacy_scake(text, language):
         try:
-            doc = textacy.make_spacy_doc(text, lang=language)
+            doc = textacy.make_spacy_doc(text, lang=spacy_languages[language])
             keyphrases = textacy.ke.scake(doc, normalize="lemma", topn=20)
             list_of_keyphrases = [keyphrase for keyphrase, score in keyphrases]
         except:
@@ -749,7 +768,8 @@ def keyphrase_extraction_module():
         )
         for ID, lemmatized_text in zip(tqdm(list_of_IDs), list_of_lemmatized_texts):
             lemmatized_table.upsert(
-                {"Text_ID": ID, "Language": language, "Lemmatized_Text": lemmatized_text}
+                {"Text_ID": ID, "Language": language, "Lemmatized_Text": lemmatized_text},
+                tinydb_where("Text_ID") == ID
             )
 
         for ID in tqdm(list_of_IDs, desc="List of dicts"):
@@ -829,6 +849,8 @@ def policy_detection_module():
             y_pred_proba, columns=["Probability_0", "Probability_1"]
         )
         df = pd.concat([df, df_proba], axis=1)
+
+        Path("../results/classification/").mkdir(parents=True, exist_ok=True)
         df.to_csv("../results/classification/classification_" + language + ".csv")
 
     print("Start time: ", str(datetime.datetime.now()))
@@ -856,7 +878,7 @@ def policy_detection_module():
 
 
 if __name__ == "__main__":
-    text_extraction_module()
-    language_detection_module()
+    # text_extraction_module()
+    # language_detection_module()
     keyphrase_extraction_module()
     policy_detection_module()

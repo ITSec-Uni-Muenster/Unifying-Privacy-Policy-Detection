@@ -17,12 +17,6 @@ conda env update -f environment.yml
 
 ```
 
-Having setup the Python environment, we also need to download a [trained model](https://fasttext.cc/docs/en/language-identification.html) of FastText for the language detection module. For this purpose:
-
-```
-wget https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin -P ./resources
-
-```
 For spacy, we need to install the necessary models:
 
 ```

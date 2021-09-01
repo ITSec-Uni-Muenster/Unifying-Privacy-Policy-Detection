@@ -40,17 +40,30 @@ The current structure of the repository is depicted as follows:
 
 ```
 .
+|-- LICENSE
 |-- README.md
+|-- privacy_policy_link_detection
+|   |-- README.md
+|   |-- custom_command_find_privacy_policies.py
+|   `-- demo_privacy_policy_download.py
 `-- privacy_policy_toolchain
+    |-- code
+    |   |-- ppt.py
+    |   `-- resources
+    |       |-- VotingClassifier_soft_de.pkl
+    |       |-- VotingClassifier_soft_en.pkl
+    |       |-- trained_vectorizer_de.pkl
+    |       `-- trained_vectorizer_en.pkl
+    |-- data
+    |   `-- privacy_policies
+    |-- environment.yml
     |-- feature_list
     |   |-- feature_list_de.txt
     |   `-- feature_list_en.txt
-    |-- ppt.py
-    `-- resources
-        |-- VotingClassifier_soft_de.pkl
-        |-- VotingClassifier_soft_en.pkl
-        |-- trained_vectorizer_de.pkl
-        `-- trained_vectorizer_en.pkl
+    |-- logs
+    |   `-- language_analysis
+    `-- results
+        `-- classification
 ```
 
 The folder `resources` contains the trained models and the vectorizers for both English and German.

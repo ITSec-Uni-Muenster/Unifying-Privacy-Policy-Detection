@@ -40,5 +40,4 @@ dependencies:
     - pymupdf==1.18.6
     - readabilipy==0.2.0
     - tinydb==4.4.0
-    - xx-ent-wiki-sm==2.3.0
     - yake==0.4.3

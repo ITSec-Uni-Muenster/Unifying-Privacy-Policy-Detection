@@ -8,7 +8,8 @@ At the moment, we have uploaded the source code as a proof of concept, according
 
 ## Environment Setup
 
-We use [Anaconda](https://docs.anaconda.com/anaconda/install/linux/) on Ubuntu 20.04 in order to create the Python environment. Please ensure that you have Java installed. To setup the environment, please follow the instructions as provided below:
+
+We use [Anaconda](https://docs.anaconda.com/anaconda/install/linux/) on Ubuntu 20.04 in order to create the Python environment. Please ensure that you have Java (e.g. openjdk-8-jre) installed. To setup the environment, please follow the instructions as provided below:
 
 ```
 conda create -n pptc python=3.6 pip
@@ -22,6 +23,7 @@ For spacy, we need to install the necessary models:
 ```
 python -m spacy download en_core_web_lg
 python -m spacy download de_core_news_lg
+python -m spacy download xx_ent_wiki_sm
 ```
 
 ## Explanation
@@ -73,3 +75,5 @@ Henry Hosseini, Martin Degeling, Christine Utz, Thomas Hupperich. "Unifying Priv
 
 ## Contact
 * Henry Hosseini: henry.hosseini@wi.uni-muenster.de
+
+

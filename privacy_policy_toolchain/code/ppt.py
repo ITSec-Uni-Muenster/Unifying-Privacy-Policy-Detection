@@ -65,10 +65,13 @@ spacy_languages = {
     "ro": "ro_core_news_lg",
 }
 
-data_dir = "../data/"
 
-# The subfolder of the data folder should be named after the date of the crawl. 
-crawl_date = sys.argv[1]
+if len(sys.argv) != 2:
+    print("Please give the folder containing the raw files as input. For example: python ppt.py /home/me/privacypolicies")
+    sys.exit()
+else:
+    data_dir = sys.argv[1]
+
 
 def load_data_of_text_policies(db, language=None):
     policies_table = db.table("policies")
@@ -273,18 +276,23 @@ def text_extraction_module():
         return text
 
     db = TinyDB(
-        os.path.join(data_dir, "database.json"),
+        os.path.join(data_dir, "../database.json"),
         storage=CachingMiddleware(JSONStorage),
     )
     table = db.table("policies")
-    pages = os.listdir(data_dir + "privacy_policies/" +  crawl_date)
+    pages = os.listdir(data_dir)
+    
+    if len(pages)==0:
+        print("The folder you specified (" + data_dir + ") does not contain any files")
+        sys.exit()
+
     html_pages = [page for page in pages if os.path.splitext(page)[1] not in {".pdf"}]
     pdf_files = [page for page in pages if os.path.splitext(page)[1] in {".pdf"}]
     list_of_page_paths = [
-        os.path.join(data_dir, "privacy_policies", crawl_date, page) for page in html_pages
+        os.path.join(data_dir, page) for page in html_pages
     ]
     list_of_pdf_paths = [
-        os.path.join(data_dir, "privacy_policies", crawl_date, page) for page in pdf_files
+        os.path.join(data_dir, page) for page in pdf_files
     ]
 
     list_of_raw_html_pages = Parallel(n_jobs=-1)(
@@ -312,7 +320,6 @@ def text_extraction_module():
         table.insert(
             {
                 "Text_ID": "HTML_" + str(i),
-                "Crawl": crawl_date,
                 "URL": html_pages[i],
                 "Raw": raw_html,
                 "Plain_Text": plain_text,
@@ -332,7 +339,6 @@ def text_extraction_module():
         table.insert(
             {
                 "Text_ID": "PDF_" + str(i),
-                "Crawl": crawl_date,
                 "URL": pdf_filename,
                 "Raw": "PDF",
                 "Plain_Text": plain_text,
@@ -459,7 +465,7 @@ def language_detection_module():
                     "textacy"
                 ] = textacy.lang_utils.identify_lang(raw_text).lower()
             except:
-                traceback.print_exc()
+                #traceback.print_exc()
                 dict_of_detected_languages["textacy"] = "un"
 
             # 7. https://github.com/bsolomon1124/pycld3
@@ -540,7 +546,7 @@ def language_detection_module():
 
     print("Start time: ", str(datetime.datetime.now()))
     db = TinyDB(
-        os.path.join(data_dir, "database.json"),
+        os.path.join(data_dir, "../database.json"),
         storage=CachingMiddleware(JSONStorage),
     )
     language_table = db.table("policies_language")
@@ -604,7 +610,7 @@ def language_detection_module():
     Path("../logs/language_analysis/").mkdir(parents=True, exist_ok=True)
 
     df.to_json(
-        "../logs/language_analysis/language_detection_probabilities_" + crawl_date + ".json",
+        "../logs/language_analysis/language_detection_probabilities.json",
         orient="records",
     )
 
@@ -747,7 +753,7 @@ def keyphrase_extraction_module():
     list_of_languages = ["en", "de"]
 
     db = TinyDB(
-        os.path.join(data_dir, "database.json"),
+        os.path.join(data_dir, "../database.json"),
         storage=CachingMiddleware(JSONStorage),
     )
 
@@ -823,6 +829,7 @@ def policy_detection_module():
     def label_comparison(
         language, list_of_dict_keyphrases, list_of_TextIDs, list_of_URLs
     ):
+
         print("Loading vectorizer and classifier")
         vectorizer = load(
             "resources/trained_vectorizer_" + language + ".pkl"
@@ -853,10 +860,11 @@ def policy_detection_module():
         Path("../results/classification/").mkdir(parents=True, exist_ok=True)
         df.to_csv("../results/classification/classification_" + language + ".csv")
 
+
     print("Start time: ", str(datetime.datetime.now()))
 
     db = TinyDB(
-        os.path.join(data_dir, "database.json"),
+        os.path.join(data_dir, "../database.json"),
         storage=CachingMiddleware(JSONStorage),
     )
 
@@ -869,16 +877,21 @@ def policy_detection_module():
             list_of_lists_of_keyphrases,
         ) = load_keyphrases(db, language)
         list_of_dict_keyphrases = keyphrase_analyzer(list_of_lists_of_keyphrases)
-        label_comparison(
-            language, list_of_dict_keyphrases, list_of_TextIDs, list_of_URLs
-        )
+
+        if list_of_dict_keyphrases == 0:
+            label_comparison(
+                language, list_of_dict_keyphrases, list_of_TextIDs, list_of_URLs
+            )
+        else: 
+            print("No data for language", language)
+
 
     db.close()
     print("End time: ", str(datetime.datetime.now()))
 
 
 if __name__ == "__main__":
-    # text_extraction_module()
-    # language_detection_module()
+    text_extraction_module()
+    language_detection_module()
     keyphrase_extraction_module()
     policy_detection_module()

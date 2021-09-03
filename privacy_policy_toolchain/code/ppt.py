@@ -29,7 +29,6 @@ import pycld2 as cld2
 import cld3
 from langdetect import detect, detect_langs, DetectorFactory, lang_detect_exception
 from guess_language import guess_language
-from tika import language as tika_language
 import fasttext
 import textacy
 from textacy import preprocessing as textacy_preprocessing
@@ -489,13 +488,6 @@ def language_detection_module():
                 dict_of_detected_languages["cld3"] = "un"
                 dict_of_detection_probabilies["cld3_probabilities"] = []
 
-            # 8. https://github.com/chrismattmann/tika-python#language-detection-interface
-            try:
-                dict_of_detected_languages["tika"] = tika_language.from_buffer(raw_text)
-            except:
-                traceback.print_exc()
-                dict_of_detected_languages["tika"] = "un"
-
             list_of_all_detected_languages = list(
                 flatten(dict_of_detected_languages.values())
             )
@@ -878,7 +870,7 @@ def policy_detection_module():
         ) = load_keyphrases(db, language)
         list_of_dict_keyphrases = keyphrase_analyzer(list_of_lists_of_keyphrases)
 
-        if list_of_dict_keyphrases == 0:
+        if list_of_TextIDs == 0:
             label_comparison(
                 language, list_of_dict_keyphrases, list_of_TextIDs, list_of_URLs
             )

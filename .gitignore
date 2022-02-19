@@ -1,0 +1,7 @@
+.vscode/
+privacy_policy_toolchain/code/resources/lid.bin.176
+privacy_policy_toolchain/data/privacy_policies/*
+privacy_policy_toolchain/data/*
+privacy_policy_toolchain/logs/language_analysis
+privacy_policy_toolchain/logs/*
+privacy_policy_toolchain/results/classification/*

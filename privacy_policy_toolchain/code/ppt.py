@@ -22,6 +22,9 @@ from joblib import Parallel, delayed, load
 from tqdm import tqdm
 from boilerpipe.extract import Extractor
 from readabilipy import simple_json_from_html_string
+from bs4 import BeautifulSoup
+from html_sanitizer import Sanitizer
+from markdownify import markdownify as md
 from tqdm import tqdm, trange
 import pandas as pd
 
@@ -247,20 +250,39 @@ def text_extraction_module():
         remove HTML/XML with 
         https://github.com/alan-turing-institute/ReadabiliPy
         """
-        result = simple_json_from_html_string(raw_html, use_readability=True)
         try:
+            sanitizer = Sanitizer()
+            raw_html = sanitizer.sanitize(raw_html)
+            result = simple_json_from_html_string(raw_html, use_readability=True)
             title = result["title"]
             if title is None:
                 title = ""
-        except:
-            title = ""
-        try:
             plain_text = result["plain_text"][-1]["text"]
             if plain_text is None:
                 plain_text = ""
+            text = title + "\n\n" + plain_text
         except:
-            plain_text = ""
-        text = title + "\n\n" + plain_text
+            text = ""
+        return text
+
+    def markdown_from_html_extraction_markdownify(raw_html):
+        text = ""
+        """Convert HTML/XML to Markdown format using
+        https://github.com/matthewwithanm/python-markdownify
+        """
+        try:
+            sanitizer = Sanitizer()
+            raw_html = sanitizer.sanitize(raw_html)
+            unwanted_tags = ["nav", "header", "footer"]
+            soup = BeautifulSoup(raw_html, "lxml")
+            _ = [tag.decompose() for tag in soup(unwanted_tags)]
+            text = md(str(soup))
+            # body = soup.find("body")
+            # text = md(raw_html)
+
+        except:
+            print(traceback.format_exc())
+            sys.exit()
         return text
 
     def text_from_pdf_extractor(pdf_path):
@@ -311,7 +333,11 @@ def text_extraction_module():
         delayed(text_from_html_extraction_readability)(raw_html)
         for raw_html in tqdm(list_of_raw_html_pages, desc="HTML Text Extraction Readability")
     )
-    assert len(list_of_plain_texts_numwordsrules) == len(list_of_plain_texts_canola) == len(list_of_plain_texts_readability) == len(html_pages) == len(list_of_raw_html_pages)
+    list_of_markdownified_texts = Parallel(n_jobs=-1)(
+        delayed(markdown_from_html_extraction_markdownify)(raw_html)
+        for raw_html in tqdm(list_of_raw_html_pages, desc="HTML Markdown Conversion")
+    )
+    assert len(list_of_plain_texts_numwordsrules) == len(list_of_plain_texts_canola) == len(list_of_plain_texts_readability) == len(html_pages) == len(list_of_raw_html_pages) == len(list_of_markdownified_texts)
 
     for i, (plain_text, raw_html) in enumerate(
         zip(list_of_plain_texts_numwordsrules, list_of_raw_html_pages), start=len(table)
@@ -323,7 +349,8 @@ def text_extraction_module():
                 "Raw": raw_html,
                 "Plain_Text": plain_text,
                 "Plain_Text_Canola":list_of_plain_texts_canola[i],
-                "Plain_Text_Readability": list_of_plain_texts_readability[i]
+                "Plain_Text_Readability": list_of_plain_texts_readability[i],
+                "Markdown_Text": list_of_markdownified_texts[i]
 
             }
         )
@@ -342,7 +369,8 @@ def text_extraction_module():
                 "Raw": "PDF",
                 "Plain_Text": plain_text,
                 "Plain_Text_Canola":"",
-                "Plain_Text_Readability": ""
+                "Plain_Text_Readability": "",
+                "Markdown_Text": ""
             }
         )
     db.close()
@@ -545,7 +573,7 @@ def language_detection_module():
 
     list_of_texts, list_of_ids = load_data_of_text_policies(db, language=None)
 
-    if not os.path.exists("resources/lid.176.bin"):
+    if not os.path.exists("resources/lid.bin.176"):
         Path("../resources/").mkdir(parents=True, exist_ok=True)
 
         print("Downloading language model of FastText ...")
@@ -757,46 +785,48 @@ def keyphrase_extraction_module():
 
         list_of_texts, list_of_IDs = load_data_of_text_policies(db, language=language)
 
-        list_of_texts = Parallel(n_jobs=-1)(
-            delayed(text_whitespace_cleaner)(text)
-            for text in tqdm(list_of_texts, desc="Cleaning texts")
-        )
-        list_of_lemmatized_texts = spacy_lemmatizer_with_whitespace(
-            list_of_texts, language
-        )
-        for ID, lemmatized_text in zip(tqdm(list_of_IDs), list_of_lemmatized_texts):
-            lemmatized_table.upsert(
-                {"Text_ID": ID, "Language": language, "Lemmatized_Text": lemmatized_text},
-                tinydb_where("Text_ID") == ID
+        if len(list_of_texts) > 0:
+            list_of_texts = Parallel(n_jobs=-1)(
+                delayed(text_whitespace_cleaner)(text)
+                for text in tqdm(list_of_texts, desc="Cleaning texts")
             )
-
-        for ID in tqdm(list_of_IDs, desc="List of dicts"):
-            list_of_keyphrase_dicts.append({"Text_ID": ID})
-        print("len(list_of_keyphrase_dicts):", len(list_of_keyphrase_dicts))
-
-        # Depending whether the library does lemmatization or not by itself, the appropriate list is passed to the function
-        for name, extractor in keyphrase_extractors.items():
-            if name in groups_of_algorithms["textacy"]:
-                list_of_lists_of_keywords = Parallel(n_jobs=-1)(
-                    delayed(extractor)(text, language)
-                    for text in tqdm(list_of_texts, desc=name)
-                )
-            else:
-                list_of_lists_of_keywords = Parallel(n_jobs=-1)(
-                    delayed(extractor)(text, language)
-                    for text in tqdm(list_of_lemmatized_texts, desc=name)
+            list_of_lemmatized_texts = spacy_lemmatizer_with_whitespace(
+                list_of_texts, language
+            )
+            for ID, lemmatized_text in zip(tqdm(list_of_IDs), list_of_lemmatized_texts):
+                lemmatized_table.upsert(
+                    {"Text_ID": ID, "Language": language, "Lemmatized_Text": lemmatized_text},
+                    tinydb_where("Text_ID") == ID
                 )
 
-            for i, ID in enumerate(tqdm(list_of_IDs)):
-                if list_of_keyphrase_dicts[i]["Text_ID"] == ID:
-                    list_of_keyphrase_dicts[i] = {
-                        **list_of_keyphrase_dicts[i],
-                        **{name: list_of_lists_of_keywords[i]},
-                    }
-        assert len(list_of_IDs) == len(list_of_keyphrase_dicts)
-        for ID, keyphrase_dicts in zip(tqdm(list_of_IDs), list_of_keyphrase_dicts):
-            keyphrase_table.upsert(keyphrase_dicts, tinydb_where("Text_ID") == ID)
+            for ID in tqdm(list_of_IDs, desc="List of dicts"):
+                list_of_keyphrase_dicts.append({"Text_ID": ID})
+            print("len(list_of_keyphrase_dicts):", len(list_of_keyphrase_dicts))
 
+            # Depending whether the library does lemmatization or not by itself, the appropriate list is passed to the function
+            for name, extractor in keyphrase_extractors.items():
+                if name in groups_of_algorithms["textacy"]:
+                    list_of_lists_of_keywords = Parallel(n_jobs=-1)(
+                        delayed(extractor)(text, language)
+                        for text in tqdm(list_of_texts, desc=name)
+                    )
+                else:
+                    list_of_lists_of_keywords = Parallel(n_jobs=-1)(
+                        delayed(extractor)(text, language)
+                        for text in tqdm(list_of_lemmatized_texts, desc=name)
+                    )
+
+                for i, ID in enumerate(tqdm(list_of_IDs)):
+                    if list_of_keyphrase_dicts[i]["Text_ID"] == ID:
+                        list_of_keyphrase_dicts[i] = {
+                            **list_of_keyphrase_dicts[i],
+                            **{name: list_of_lists_of_keywords[i]},
+                        }
+            assert len(list_of_IDs) == len(list_of_keyphrase_dicts)
+            for ID, keyphrase_dicts in zip(tqdm(list_of_IDs), list_of_keyphrase_dicts):
+                keyphrase_table.upsert(keyphrase_dicts, tinydb_where("Text_ID") == ID)
+        else:
+            print("No texts exist in the database for", language)
     db.close()
 
     print("End time: ", str(datetime.datetime.now()))
@@ -868,15 +898,16 @@ def policy_detection_module():
             list_of_URLs,
             list_of_lists_of_keyphrases,
         ) = load_keyphrases(db, language)
-        list_of_dict_keyphrases = keyphrase_analyzer(list_of_lists_of_keyphrases)
 
-        if list_of_TextIDs == 0:
+        if len(list_of_TextIDs) > 0:
+
+            list_of_dict_keyphrases = keyphrase_analyzer(list_of_lists_of_keyphrases)
+
             label_comparison(
                 language, list_of_dict_keyphrases, list_of_TextIDs, list_of_URLs
             )
-        else: 
-            print("No data for language", language)
-
+        else:
+            print("No texts exist in database for", language)
 
     db.close()
     print("End time: ", str(datetime.datetime.now()))

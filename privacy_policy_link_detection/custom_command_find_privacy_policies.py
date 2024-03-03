@@ -119,7 +119,7 @@ class FindPrivacyPolicyCommand(BaseCommand):
                         or (('california' in a_tag_lowercase) and ('right' in a_tag_lowercase)))
                         or ((('kaliforni' in a_tag_lowercase) and ('datenschutz' in a_tag_lowercase))
                         or (('kaliforni' in a_tag_lowercase) and ('rechte' in a_tag_lowercase)))):
-                        if (self.modify_relative_urls(a_tag["href"], site) and self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links):
+                        if self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links:
                                 california_privacy_links.append(self.modify_relative_urls(a_tag["href"], site))
             except Exception as e:
                 self.logger.error(e)
@@ -138,7 +138,7 @@ class FindPrivacyPolicyCommand(BaseCommand):
                                 temp = re.sub(" +", " ", temp).strip()
                                 list_of_matches.append(temp)
                         if len(set(list_of_matches)) > 0:
-                            if (self.modify_relative_urls(a_tag["href"], site) and self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links):
+                            if self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links:
                                     california_privacy_links.append(self.modify_relative_urls(a_tag["href"], site))
     
                         if(((('california' in a_tag_string_lowercase) and ('privacy' in a_tag_string_lowercase))

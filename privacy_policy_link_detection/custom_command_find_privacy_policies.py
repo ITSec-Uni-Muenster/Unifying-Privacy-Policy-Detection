@@ -60,9 +60,9 @@ class FindPrivacyPolicyCommand(BaseCommand):
         for a_tag in a_tags:
             for p in self.keywords_privacy:
                 try:
-                    if "href" in a_tag:
+                    if "href" in a_tag.attrs and a_tag["href"] is not None:
                         if p in a_tag["href"].lower():
-                            if(self.modify_relative_urls(a_tag["href"], site) and self.modify_relative_urls(a_tag["href"], site) not in pp_urls):
+                            if self.modify_relative_urls(a_tag["href"], site) not in pp_urls:
                                 pp_urls.append(self.modify_relative_urls(a_tag["href"], site))
                 except Exception as e:
                     self.logger.error(e)
@@ -70,19 +70,21 @@ class FindPrivacyPolicyCommand(BaseCommand):
 
                 # context
                 try:
-                    if a_tag.string:
-                        if p in a_tag.string.lower(): 
-                            if(self.modify_relative_urls(a_tag["href"], site) and self.modify_relative_urls(a_tag["href"], site) not in pp_urls_context):
-                                pp_urls_context.append(self.modify_relative_urls(a_tag["href"], site))
+                    if "href" in a_tag.attrs and a_tag["href"] is not None:
+                        if a_tag.string:
+                            if p in a_tag.string.lower(): 
+                                if self.modify_relative_urls(a_tag["href"], site) not in pp_urls_context:
+                                    pp_urls_context.append(self.modify_relative_urls(a_tag["href"], site))
                 except Exception as e:
                     self.logger.error(e)
                     self.logger.error(traceback.print_exc())
                 
                 try:
-                    if len(pp_urls_context) == 0 and a_tag.previous_element.string:
-                        if p in a_tag.previous_element.string.lower():
-                            if(self.modify_relative_urls(a_tag["href"], site) and self.modify_relative_urls(a_tag["href"], site) not in pp_urls_context):
-                                pp_urls_context.append(self.modify_relative_urls(a_tag["href"], site))
+                    if "href" in a_tag.attrs and a_tag["href"] is not None:
+                        if len(pp_urls_context) == 0 and a_tag.previous_element.string:
+                            if p in a_tag.previous_element.string.lower():
+                                if self.modify_relative_urls(a_tag["href"], site) not in pp_urls_context:
+                                    pp_urls_context.append(self.modify_relative_urls(a_tag["href"], site))
                 except Exception as e:
                     self.logger.error(e)
                     self.logger.error(traceback.print_exc())
@@ -100,7 +102,7 @@ class FindPrivacyPolicyCommand(BaseCommand):
 
         for a_tag in a_tags:
             try:
-                if "href" in a_tag:
+                if "href" in a_tag.attrs and a_tag["href"] is not None:
                     a_tag_lowercase = a_tag["href"].lower()
                     list_of_matches = []
                     for regex in [do_not_sell_link, privacy_notice_rights, californian_residents]:
@@ -110,14 +112,14 @@ class FindPrivacyPolicyCommand(BaseCommand):
                             temp = re.sub(" +", " ", temp).strip()
                             list_of_matches.append(temp)
                     if len(set(list_of_matches)) > 0:
-                        if (self.modify_relative_urls(a_tag["href"], site) and self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links):
+                        if self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links:
                                 california_privacy_links.append(self.modify_relative_urls(a_tag["href"], site))
 
                     if (((('california' in a_tag_lowercase) and ('privacy' in a_tag_lowercase))
                         or (('california' in a_tag_lowercase) and ('right' in a_tag_lowercase)))
                         or ((('kaliforni' in a_tag_lowercase) and ('datenschutz' in a_tag_lowercase))
                         or (('kaliforni' in a_tag_lowercase) and ('rechte' in a_tag_lowercase)))):
-                        if (self.modify_relative_urls(a_tag["href"], site) and self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links):
+                        if self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links:
                                 california_privacy_links.append(self.modify_relative_urls(a_tag["href"], site))
             except Exception as e:
                 self.logger.error(e)
@@ -125,42 +127,44 @@ class FindPrivacyPolicyCommand(BaseCommand):
 
             # context
             try:
-                if a_tag.string:
-                    a_tag_string_lowercase = a_tag.string.lower()
-                    list_of_matches = []
-                    for regex in [do_not_sell_link, privacy_notice_rights, californian_residents]:
-                        matches = re.finditer(regex, a_tag_string_lowercase, re.IGNORECASE | re.DOTALL | re.UNICODE | re.MULTILINE)
-                        for match in matches:
-                            temp = match.group()
-                            temp = re.sub(" +", " ", temp).strip()
-                            list_of_matches.append(temp)
-                    if len(set(list_of_matches)) > 0:
-                        if (self.modify_relative_urls(a_tag["href"], site) and self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links):
-                                california_privacy_links.append(self.modify_relative_urls(a_tag["href"], site))
-
-                    if(((('california' in a_tag_string_lowercase) and ('privacy' in a_tag_string_lowercase))
-                    or (('california' in a_tag_string_lowercase) and ('right' in a_tag_string_lowercase)))
-                    or ((('kaliforni' in a_tag_string_lowercase) and ('datenschutz' in a_tag_string_lowercase))
-                    or (('kaliforni' in a_tag_string_lowercase) and ('rechte' in a_tag_string_lowercase)))):
-                        if (self.modify_relative_urls(a_tag["href"], site) and self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links):
-                                california_privacy_links.append(self.modify_relative_urls(a_tag["href"], site))
+                if "href" in a_tag.attrs and a_tag["href"] is not None:
+                    if a_tag.string:
+                        a_tag_string_lowercase = a_tag.string.lower()
+                        list_of_matches = []
+                        for regex in [do_not_sell_link, privacy_notice_rights, californian_residents]:
+                            matches = re.finditer(regex, a_tag_string_lowercase, re.IGNORECASE | re.DOTALL | re.UNICODE | re.MULTILINE)
+                            for match in matches:
+                                temp = match.group()
+                                temp = re.sub(" +", " ", temp).strip()
+                                list_of_matches.append(temp)
+                        if len(set(list_of_matches)) > 0:
+                            if self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links:
+                                    california_privacy_links.append(self.modify_relative_urls(a_tag["href"], site))
+    
+                        if(((('california' in a_tag_string_lowercase) and ('privacy' in a_tag_string_lowercase))
+                        or (('california' in a_tag_string_lowercase) and ('right' in a_tag_string_lowercase)))
+                        or ((('kaliforni' in a_tag_string_lowercase) and ('datenschutz' in a_tag_string_lowercase))
+                        or (('kaliforni' in a_tag_string_lowercase) and ('rechte' in a_tag_string_lowercase)))):
+                            if self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links:
+                                    california_privacy_links.append(self.modify_relative_urls(a_tag["href"], site))
             except Exception as e:
                 self.logger.error(e)
                 self.logger.error(traceback.print_exc())
 
             try:
-                if a_tag.previous_element.string:
-                    a_tag_prev_element = a_tag.previous_element.string
-                    list_of_matches = []
-                    for regex in [do_not_sell_link, privacy_notice_rights, californian_residents]:
-                        matches = re.finditer(regex, a_tag_prev_element, re.IGNORECASE | re.DOTALL | re.UNICODE | re.MULTILINE)
-                        for match in matches:
-                            temp = match.group()
-                            temp = re.sub(" +", " ", temp).strip()
-                            list_of_matches.append(temp)
-                    if len(set(list_of_matches)) > 0:
-                        if(self.modify_relative_urls(a_tag["href"], site) and self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links):
-                            california_privacy_links.append(self.modify_relative_urls(a_tag["href"], site))
+                if "href" in a_tag.attrs and a_tag["href"] is not None:
+                    if a_tag.previous_element.string:
+                        a_tag_prev_element = a_tag.previous_element.string
+                        list_of_matches = []
+                        for regex in [do_not_sell_link, privacy_notice_rights, californian_residents]:
+                            matches = re.finditer(regex, a_tag_prev_element, re.IGNORECASE | re.DOTALL | re.UNICODE | re.MULTILINE)
+                            for match in matches:
+                                temp = match.group()
+                                temp = re.sub(" +", " ", temp).strip()
+                                list_of_matches.append(temp)
+                        if len(set(list_of_matches)) > 0:
+                            if self.modify_relative_urls(a_tag["href"], site) not in california_privacy_links:
+                                california_privacy_links.append(self.modify_relative_urls(a_tag["href"], site))
             except Exception as e:
                 self.logger.error(e)
                 self.logger.error(traceback.print_exc())

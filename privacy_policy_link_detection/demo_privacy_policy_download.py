@@ -17,13 +17,12 @@ from openwpm.storage.sql_provider import SQLiteStorageProvider
 from openwpm.task_manager import TaskManager
 
 today = str(datetime.now().date())
-today = "2023-06-13"
 
 print("Default encoding:", sys.getdefaultencoding(), flush=True)
 
 # The list of sites that we wish to crawl
 NUM_BROWSERS = 10
-tranco_date = "2022-12-23" # do not touch this during each series of collection
+tranco_date = str(datetime.now().date()) # do not change this during each series of collection
 start_tranco = 0 # start if continued crawl.
 amount_tranco = 100000 #do not touch this either.
 

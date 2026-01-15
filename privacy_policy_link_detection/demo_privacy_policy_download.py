@@ -21,7 +21,7 @@ today = str(datetime.now().date())
 print("Default encoding:", sys.getdefaultencoding(), flush=True)
 
 # The list of sites that we wish to crawl
-NUM_BROWSERS = 10
+NUM_BROWSERS = 5
 tranco_date = str(datetime.now().date()) # do not change this during each series of collection
 start_tranco = 0 # start if continued crawl.
 amount_tranco = 100000 #do not touch this either.
@@ -146,4 +146,5 @@ with TaskManager(
 
 print("End time: ", str(datetime.now()), flush=True)
 print(f'Run time: {(time.time() - t0):.3f}', flush=True)
+
 

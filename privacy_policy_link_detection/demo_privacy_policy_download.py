@@ -21,15 +21,16 @@ today = str(datetime.now().date())
 print("Default encoding:", sys.getdefaultencoding(), flush=True)
 
 # The list of sites that we wish to crawl
-NUM_BROWSERS = 10
-tranco_date = str(datetime.now().date()) # do not change this during each series of collection
+NUM_BROWSERS = 1          ##
+tranco_date = str(datetime.now().date()) # do not change this during each series of collection  
+tranco_date = "2026-01-15"       ##
 start_tranco = 0 # start if continued crawl.
-amount_tranco = 100000 #do not touch this either.
+amount_tranco = 100 #do not touch this either.     ##
 
 path_res = "./datadir_" + today + "/"
 
 
-def collect_tranco(input_date, start_tranco, amount_urls):
+def collect_tranco(input_date, amount_urls):
     donedomains = []
     tranco_urls = []
     print("Reading" + path_res + "crawl-data.ndjson", flush=True)
@@ -59,9 +60,9 @@ def collect_tranco(input_date, start_tranco, amount_urls):
     # tranco_urls = mp.Manager().list()
     # temp = mp.Manager().list()
     if input_date == "default":
-        temp = tr.list().top(start=start_tranco, num=amount_urls)
+        temp = tr.list().top( num=amount_urls) #####
     else:
-        temp = tr.list(date=input_date).top(start=start_tranco, num=amount_urls)
+        temp = tr.list(date=input_date).top( num=amount_urls) #####
     skipped = 0
     for i in temp:
         if 'http://' + i not in donedomains:
@@ -73,7 +74,7 @@ def collect_tranco(input_date, start_tranco, amount_urls):
 
 print("Start time: ", str(datetime.now()), flush=True)
 t0 = time.time()
-domains = collect_tranco(tranco_date, start_tranco, amount_tranco)
+domains = collect_tranco(tranco_date, amount_tranco)  ######
 print('Number of domains to crawl: ', len(domains), flush=True)
 
 # Loads the default ManagerParams

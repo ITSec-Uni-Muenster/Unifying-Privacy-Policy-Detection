@@ -951,12 +951,12 @@ def main():
     print("STEP 1: TEXT EXTRACTION")
     print("==============================")
     print(f"Arbeite auf: {datadir}")
-    #text_extraction_module(datadir, args.extraction_output)
+    text_extraction_module(datadir, args.extraction_output)
 
     print("\n==============================")
     print("STEP 2: LANGUAGE DETECTION")
     print("==============================")
-    #language_detection_module(args.extraction_output,args.language_output)
+    language_detection_module(args.extraction_output,args.language_output)
 
     print("\n==============================")
     print("STEP 3: POLICY DETECTION")

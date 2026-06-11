@@ -24,6 +24,21 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown("""
+<style>
+
+div.stButton > button:first-child {
+    border-radius: 10px;
+    font-weight: bold;
+}
+
+[data-testid="stMetricValue"] {
+    font-size: 28px;
+}
+
+</style>
+""",
+unsafe_allow_html=True)
 
 # Button styling
 
@@ -428,6 +443,23 @@ def show_results(
 
         df = pd.DataFrame(display_rows)
 
+        # Filter options for policy detection results
+        filter_option = st.radio(
+            "Filter",
+            [
+                "All",
+                "Keep Only",
+                "Drop Only",
+            ],
+            horizontal=True,
+        )
+
+        if filter_option == "Keep Only":
+            df = df[df["Classification"] == "keep"]
+
+        elif filter_option == "Drop Only":
+            df = df[df["Classification"] == "drop"]
+
         st.dataframe(
             df,
             width="stretch",
@@ -480,6 +512,22 @@ st.write(
     "or as a full toolchain, and inspect the generated result files without using "
     "command-line commands directly."
 )
+
+st.markdown("""
+### Workflow
+
+1️⃣ Crawler
+
+2️⃣ Text Extraction
+
+3️⃣ Language Detection
+
+4️⃣ Policy Detection
+
+5️⃣ Full Toolchain"
+
+6️⃣ View Results
+""")
 
 show_status()
 
@@ -583,9 +631,9 @@ with crawler_col2:
 
 with crawler_col3:
     if crawler_running:
-        st.caption("Crawler is running.")
+        st.success("🟢 Crawler Running")
     else:
-        st.caption("Crawler is not running.")
+        st.info("⚪ Crawler Not Running")
 
 
 # Show Tranco lists AFTER clicking "Select List"

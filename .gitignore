@@ -1,4 +1,9 @@
 .vscode/
+.venv-toolchain/
+__pycache__/
+*.pyc
+privacy_policy_toolchain/results/
+datadir_*
 privacy_policy_toolchain/code/resources/lid.176.bin
 privacy_policy_toolchain/data/privacy_policies/*
 privacy_policy_toolchain/data/database.json

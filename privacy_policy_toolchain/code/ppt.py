@@ -1,1216 +1,971 @@
-import os
-import re
-import time
-import string
-import datetime
-import statistics
-import traceback
-import sys
-import re
-from collections import Counter
-from pprint import pprint
-from pathlib import Path
-from urllib import request
+from __future__ import annotations
 
-from tinydb import TinyDB, Query
-from tinydb import where as tinydb_where
-from tinydb.storages import JSONStorage
-from tinydb.middlewares import CachingMiddleware
-
-from chardet.universaldetector import UniversalDetector
-from joblib import Parallel, delayed, load
-import psutil
-import stopit
-from tqdm import tqdm
-from boilerpipe.extract import Extractor
-from readabilipy import simple_json_from_html_string
-from bs4 import BeautifulSoup
-from html_sanitizer import Sanitizer
-from markdownify import markdownify as md
-from tqdm import tqdm, trange
-import pandas as pd
-
-from publicsuffix2 import PublicSuffixList
-from publicsuffix2 import get_public_suffix
-import tldextract
-from tld import get_tld, get_fld
-from urllib.parse import unquote, urlparse
-
-import pycld2 as cld2
-import cld3
-from langdetect import detect, detect_langs, DetectorFactory, lang_detect_exception
-from guess_language import guess_language
-import fasttext
-import textacy
-from textacy import preprocessing as textacy_preprocessing
-import ftfy
-
-import ndjson
-import ujson
+import argparse
 import json
+import re
+import ftfy
+from pathlib import Path
+from typing import Any, Iterable
 
-import yake
-import spacy
-import pke
+from bs4 import BeautifulSoup
+import trafilatura
 from tqdm import tqdm
-from multi_rake import Rake
+import os
 
-from difflib import SequenceMatcher
+from openai import OpenAI
+from chardet import UniversalDetector
 
-import hashlib
-import simhash
+# Konfiguration für KI-Connect 
+KI_BASE_URL = "https://chat.kiconnect.nrw/api/v1"
+KI_API_KEY = os.getenv("KI_API_KEY")
 
-from pandas.core.common import flatten
-import fitz
+KI_MODEL_LANGUAGE = "Mistral Small 4 119B"
+KI_MODEL_POLICY = "Mistral Small 4 119B"
 
-sanitizer = Sanitizer()
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+KI_LANGUAGE_TIMEOUT = 60
+KI_LANGUAGE_MAX_CHARS = 4000
+KI_POLICY_TIMEOUT = 180
+KI_POLICY_MAX_CHARS = 8000
 
 
-spacy_languages = {
-    "de": "de_core_news_lg",
-    "el": "el_core_news_lg",
-    "en": "en_core_web_lg",
-    "es": "es_core_news_lg",
-    "fr": "fr_core_news_lg",
-    "it": "it_core_news_lg",
-    "nl": "nl_core_news_lg",
-    "pt": "pt_core_news_lg",
-    "xx": "xx_ent_wiki_sm",
-    "nb": "nb_core_news_lg",
-    "lt": "lt_core_news_lg",
-    "zh": "zh_core_web_lg",
-    "da": "da_core_news_lg",
-    "ja": "ja_core_news_lg",
-    "pl": "pl_core_news_lg",
-    "ro": "ro_core_news_lg",
+# Wörterbuch mit typischen Mojibake-/Encoding-Fehlern.
+# Beispiel: "Ã¼" soll zu "ü" werden.
+dict_of_umlaute_errors = {
+    'Ã¼': 'ü',
+    'Ã¤': 'ä',
+    'Ã¶': 'ö',
+    'Ã–': 'Ö',
+    'ÃŸ': 'ß',
+    'Ã ': 'à',
+    'Ã¡': 'á',
+    'Ã¢': 'â',
+    'Ã£': 'ã',
+    'Ã¹': 'ù',
+    'Ãº': 'ú',
+    'Ã»': 'û',
+    'Ã™': 'Ù',
+    'Ãš': 'Ú',
+    'Ã›': 'Û',
+    'Ãœ': 'Ü',
+    'Ã²': 'ò',
+    'Ã³': 'ó',
+    'Ã´': 'ô',
+    'Ã¨': 'è',
+    'Ã©': 'é',
+    'Ãª': 'ê',
+    'Ã«': 'ë',
+    'â‚¬': '€'
 }
 
-dict_of_umlaute_errors = {'Ã¼':'ü',
-                            'Ã¤':'ä',
-                            'Ã¶':'ö',
-                            'Ã–':'Ö',
-                            'ÃŸ':'ß',
-                            'Ã ':'à',
-                            'Ã¡':'á',
-                            'Ã¢':'â',
-                            'Ã£':'ã',
-                            'Ã¹':'ù',
-                            'Ãº':'ú',
-                            'Ã»':'û',
-                            'Ã™':'Ù',
-                            'Ãš':'Ú',
-                            'Ã›':'Û',
-                            'Ãœ':'Ü',
-                            'Ã²':'ò',
-                            'Ã³':'ó',
-                            'Ã´':'ô',
-                            'Ã¨':'è',
-                            'Ã©':'é',
-                            'Ãª':'ê',
-                            'Ã«':'ë',
-                            'Ã€':'À',
-                            'Ã':'Á',
-                            'Ã‚':'Â',
-                            'Ãƒ':'Ã',
-                            'Ã„':'Ä',
-                            'Ã…':'Å',
-                            'Ã‡':'Ç',
-                            'Ãˆ':'È',
-                            'Ã‰':'É',
-                            'ÃŠ':'Ê',
-                            'Ã‹':'Ë',
-                            'ÃŒ':'Ì',
-                            'Ã':'Í',
-                            'ÃŽ':'Î',
-                            'Ã':'Ï',
-                            'Ã‘':'Ñ',
-                            'Ã’':'Ò',
-                            'Ã“':'Ó',
-                            'Ã”':'Ô',
-                            'Ã•':'Õ',
-                            'Ã˜':'Ø',
-                            'Ã¥':'å',
-                            'Ã¦':'æ',
-                            'Ã§':'ç',
-                            'Ã¬':'ì',
-                            'Ã­':'í',
-                            'Ã®':'î',
-                            'Ã¯':'ï',
-                            'Ã°':'ð',
-                            'Ã±':'ñ',
-                            'Ãµ':'õ',
-                            'Ã¸':'ø',
-                            'Ã½':'ý',
-                            'Ã¿':'ÿ',
-                            'â‚¬':'€'}
-
-dict_of_umlaute_errors = {**dict_of_umlaute_errors,
-                          **{key.lower(): value for key, value in dict_of_umlaute_errors.items()}}
-
-if len(sys.argv) != 2:
-    print("Please give the folder containing the raw files as input. For example: python ppt.py /home/me/privacypolicies", flush=True)
-    sys.exit()
-else:
-    data_dir = sys.argv[1]
-    crawl = data_dir.split("/")[-1].lstrip("datadir_")
-    print("Working on Crawl:", crawl, flush=True)
+# Erweitert das Wörterbuch zusätzlich um lowercase-Varianten der Keys,
+# damit noch mehr fehlerhafte Zeichenfolgen abgefangen werden.
+dict_of_umlaute_errors = {
+    **dict_of_umlaute_errors,
+    **{key.lower(): value for key, value in dict_of_umlaute_errors.items()}
+}
 
 
-def load_data_of_text_policies(db, language=None):
-    policies_table = db.table("policies")
-    list_of_policies_dicts = policies_table.all()
-    print("list_of_policies_dicts: {}".format(len(list_of_policies_dicts)), flush=True)
+def repair_encoding_errors(text: str) -> str:
+    """
+    Repariert typische Text-/Encoding-Probleme.
 
-    if language:
-        language_table = db.table("policies_language")
-        list_of_language_dicts = language_table.search(
-            tinydb_where("DeterminedLanguage") == language
-        )
-        print("list_of_language_dicts: {}".format(len(list_of_language_dicts)), flush=True)
+    Schritte:
+    1. Allgemeine Unicode-/Mojibake-Reparatur mit ftfy
+    2. Zusätzliche manuelle Ersetzungen aus dem alten Repository
+    3. Leichte Normalisierung von Leerzeichen und Zeilenumbrüchen
 
-        list_of_language_IDs = [
-            language_dict["TextID"] for language_dict in list_of_language_dicts
-        ]
-        print("list_of_languageIDs: {}".format(len(list_of_language_IDs)), flush=True)
+    Rückgabe:
+        Bereinigter Text als String.
+    """
+    if not text:
+        return ""
 
-        list_of_policies_dicts = [
-            policy_dict
-            for policy_dict in list_of_policies_dicts
-            if policy_dict["TextID"] in list_of_language_IDs
-        ]
-
-    list_of_texts = [
-        policy_dict["Text"] for policy_dict in list_of_policies_dicts
-    ]
-    list_of_IDs = [policy_dict["TextID"] for policy_dict in list_of_policies_dicts]
-    print("Number of loaded texts: {}".format(len(list_of_texts)), flush=True)
-    del list_of_policies_dicts
-    return list_of_texts, list_of_IDs
-
-
-def text_cleaner(text):
-
-    def fix_utf8_iso8859_errors(text):
-        # source: https://sebastianviereck.de/mysql-php-umlaute-sonderzeichen-utf8-iso/
-        for error, replacement in dict_of_umlaute_errors.items():
-            text = text.replace(error, replacement)
-        return text
-
-    text = textacy_preprocessing.normalize.bullet_points(text)
-    text = textacy_preprocessing.normalize.unicode(text)
     text = ftfy.fix_text(text)
-    text = fix_utf8_iso8859_errors(text)
-    text = textacy_preprocessing.normalize.hyphenated_words(text)
-    text = textacy_preprocessing.normalize.whitespace(text)
-    text = textacy_preprocessing.replace.emails(text, "REPLACEDEMAIL")
-    text = textacy_preprocessing.replace.urls(text, "REPLACEDURL")
-    text = textacy_preprocessing.replace.phone_numbers(text, "REPLACEDPHONENUMBER")
-    text = re.sub(
-        " +",
-        " ",
-        "".join(x if x.isprintable() or x in string.whitespace else " " for x in text),
-    )
-    text = text.replace("\n", "\n\n")
-    return text
+
+    for wrong, correct in dict_of_umlaute_errors.items():
+        text = text.replace(wrong, correct)
+
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
 
 
-def spacy_lemmatizer_with_whitespace(texts, language):
-    lemmatized_docs = []
-    nlp = spacy.load(spacy_languages[language], disable=["ner"])
-    for text in tqdm(texts, desc="Spacy Lemmatization"):
-        nlp.max_length = len(text)
-        doc = nlp(text)
-        lemmatized_docs.append(
-            "".join([token.lemma_ + token.whitespace_ for token in doc])
-        )
-    return lemmatized_docs
+def _extract_first_json_object(text: str) -> dict | None:
+    """
+    Extrahiert robust das erste JSON-Objekt aus einer LLM-Antwort.
+    Funktioniert auch, wenn das Modell vor/nach dem JSON zusätzlichen Text erzeugt.
+    """
+    if not text:
+        return None
 
-def domain_cleaner(domain):
-    domain = domain.lower()
-    if domain.startswith("http://"):
-        domain = domain.replace("http://", "", 1)
-    elif domain.startswith("https://"):
-        domain = domain.replace("https://", "", 1)
-    else:
-        domain = domain
-    return domain
+    text = text.strip()
 
-def get_policy_domain(url):
-    url = url.lower() # lowercase everything
-    url = "".join(url.splitlines()) # remove line breaks
-    if url.startswith("http_"):
-        url = url.replace("http_", "", 1)
-    elif url.startswith("https_"):
-        url = url.replace("https_", "", 1)
-    if len(url.split("_")[0]) > 1:
-        url = url.split("_")[0]
-    if url.endswith("443"):
-        url = url.rstrip("443")
-    elif url.endswith("40018"):
-        url = url.rstrip("40018")
-    elif url.endswith("8090"):
-        url = url.rstrip("8090")
-    elif url.endswith("80"):
-        url = url.rstrip("80")
-    elif url.endswith("809"):
-        url = url.rstrip("809")
+    # 1. Direkter JSON-Versuch
     try:
-        domain = get_fld(url, fail_silently=False, fix_protocol=True)
-    except:
-        domain = urlparse(url).netloc
-    return domain
+        obj = json.loads(text)
+        if isinstance(obj, dict):
+            return obj
+    except Exception:
+        pass
+
+    # 2. JSON-Objekt ab jeder öffnenden Klammer versuchen
+    decoder = json.JSONDecoder()
+
+    for i, char in enumerate(text):
+        if char != "{":
+            continue
+
+        try:
+            obj, _ = decoder.raw_decode(text[i:])
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            continue
+
+    # 3. Fallback: Label aus freiem Text extrahieren
+    label_match = re.search(r'"?label"?\s*:\s*"?(keep|drop)"?', text, flags=re.IGNORECASE)
+    reason_match = re.search(r'"?reason"?\s*:\s*"([^"]+)"', text, flags=re.IGNORECASE)
+
+    if label_match:
+        return {
+            "label": label_match.group(1).lower(),
+            "reason": reason_match.group(1).strip() if reason_match else "Reason could not be fully parsed."
+        }
+
+    return None
+    
+
+def get_ki_client(timeout: int = KI_LANGUAGE_TIMEOUT) -> OpenAI:
+    """
+    Erstellt den OpenAI-kompatiblen Client für die KI-Connect API.
+
+    Wichtig:
+    Der API-Key wird nicht direkt im Code gespeichert.
+    Vor dem Start muss im Terminal gesetzt werden:
+
+        export KI_API_KEY='...'
+    """
+    if not KI_API_KEY:
+        raise RuntimeError(
+            "KI_API_KEY is not set. "
+            "Please run: export KI_API_KEY='your-api-key'"
+        )
+
+    return OpenAI(
+        api_key=KI_API_KEY,
+        base_url=KI_BASE_URL,
+        timeout=timeout,
+    )
 
 
-def stripprotocol(uri):
-    noprotocolluri = ""
-    if uri.find("https") == 0:
-        noprotocolluri = uri[5:]
+def clean_language_name(language: str | None) -> str:
+    """
+    Bereinigt nur die Sprachangabe aus der Mistral-Antwort.
+
+    Wichtig:
+    Diese Funktion macht kein Mapping.
+    Sie wandelt also nicht German -> de um.
+
+    Beispiele:
+        "German" bleibt "German"
+        "English" bleibt "English"
+        "Portuguese" bleibt "Portuguese"
+        "mixed" bleibt "mixed"
+        "unknown" bleibt "unknown"
+    """
+    if not language:
+        return "unknown"
+
+    language = str(language).strip()
+
+    if not language:
+        return "unknown"
+
+    # Nur sehr lange oder kaputte Antworten verhindern
+    if len(language) > 50:
+        return "unknown"
+
+    return language
+
+
+def detect_language_with_mistral(text: str) -> tuple[str, float | None]:
+    """
+    Erkennt die Sprache ausschließlich mit dem KI-Connect Mistral-Modell.
+
+    Kein fastText.
+    Kein UI-/Mixed-Precheck.
+    Kein Mapping.
+    Keine feste Sprachliste.
+
+    Mistral darf die Sprache vollständig ausschreiben:
+        German, English, French, Spanish, Arabic, Turkish, Vietnamese, ...
+
+    Rückgabe:
+        (language, confidence)
+    """
+    cleaned = repair_encoding_errors(text).strip()
+
+    if not cleaned:
+        return "unknown", 0.0
+
+    client = get_ki_client(KI_LANGUAGE_TIMEOUT)
+
+    sample = cleaned[:KI_LANGUAGE_MAX_CHARS]
+
+    system_prompt = """
+You are a strict language detection component in a multilingual privacy-policy processing pipeline.
+
+Your task is to detect the language of the provided text.
+
+You must decide only from the text itself.
+Do not use external knowledge.
+Do not classify whether the text is a privacy policy.
+Do not classify whether the text is a UI menu, cookie banner, footer, navigation, or boilerplate.
+Only detect the language of the given text.
+
+Return exactly one valid JSON object.
+Do not use markdown.
+Do not add explanations outside the JSON.
+
+Language output rule:
+- If one language is clearly identifiable, write the full English language name.
+- Examples: "German", "English", "French", "Spanish", "Italian", "Dutch", "Portuguese", "Polish", "Turkish", "Arabic", "Russian", "Chinese", "Japanese", "Korean", "Vietnamese", "Greek", "Ukrainian", "Romanian", "Hindi", "Bengali", "Farsi", "Hokkien", "Southern Min", "Sranan Tongo", "Dagbani", "Minangkabau", "Tyap", etc.
+- You are not limited to this example list.
+- Use the most specific full English language name that best describes the text.
+
+Special values:
+- Use "mixed" if the text contains multiple different languages and no single language is clearly dominant.
+- Use "unknown" if the language cannot be determined reliably.
+
+Important rules:
+1. Treat UI labels, menus, navigation text, footer text, cookie text, and short interface text as normal text for language detection.
+2. Return "mixed" if the text is mainly a list of language names such as Deutsch, English, Español, Français, Italiano, Português, Nederlands, Polski, etc.
+3. Do not return "mixed" only because the text is a UI menu, footer, cookie banner, or navigation block.
+4. Return a normal language if the UI/menu/footer text is clearly written in one language.
+5. Return "mixed" only when the text itself contains multiple languages and no single language is clearly dominant.
+6. If a text is a language-selection list containing many language names in different languages, return "mixed".
+7. If one language clearly dominates, return that language even if a few foreign words, names, buttons, or links appear.
+8. Return "unknown" only if the language cannot be identified reliably from the text.
+9. The confidence must be a number between 0.0 and 1.0.
+10. Return only JSON.
+
+Required JSON format:
+{
+  "language": "German",
+  "confidence": 0.98
+}
+""".strip()
+
+    try:
+        resp = client.chat.completions.create(
+            model=KI_MODEL_LANGUAGE,
+            temperature=0.0,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": sample},
+            ],
+        )
+
+        raw_answer = resp.choices[0].message.content.strip()
+        parsed = _extract_first_json_object(raw_answer)
+
+        if not parsed:
+            print("[MISTRAL LANGUAGE RAW RESPONSE]", raw_answer, flush=True)
+            return "unknown", 0.0
+
+        language = clean_language_name(parsed.get("language"))
+
+        try:
+            confidence = float(parsed.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        confidence = max(0.0, min(1.0, confidence))
+
+        return language, confidence
+
+    except Exception as e:
+        print(f"[MISTRAL LANGUAGE DETECTION ERROR] {e}", flush=True)
+        return "unknown", 0.0
+
+
+def detect_language(text: str) -> tuple[str, float | None]:
+    """
+    Zentrale Sprachdetektion der Pipeline.
+
+    Rückgabe:
+        (language, confidence)
+    """
+    return detect_language_with_mistral(text)
+
+
+def find_latest_datadir(openwpm_root: Path) -> Path:
+    """
+    Sucht im OpenWPM-Root nach Ordnern mit dem Muster 'datadir_*'
+    und gibt den neuesten (lexikographisch letzten) zurück.
+
+    Nützlich, wenn der Datadir-Ordner nach jedem Crawl neu erzeugt wird.
+    """
+    candidates = sorted(openwpm_root.glob("datadir_*"))
+    if not candidates:
+        raise FileNotFoundError(f"Keine datadir_* Ordner gefunden in: {openwpm_root}")
+    return candidates[-1]
+
+
+def iter_input_files(datadir: Path) -> Iterable[Path]:
+    """
+    Liefert rekursiv alle .ndjson-Dateien aus einem datadir.
+
+    Diese Dateien bilden den Input für die erste Phase der Pipeline.
+    """
+    yield from datadir.rglob("*.ndjson")
+
+
+def fallback_bs4_text(html: str) -> str:
+    """
+    Extrahiert Text aus HTML mit BeautifulSoup als Fallback-Methode.
+
+    Vorgehen:
+    1. Entfernt irrelevante HTML-Tags wie script/style/img/iframe
+    2. Versucht zuerst typische Hauptcontainer zu finden
+    3. Falls nichts Passendes gefunden wird, wird der gesamte Body gelesen
+
+    Rückgabe:
+        Extrahierter Klartext.
+    """
+    soup = BeautifulSoup(html, "lxml")
+
+    for tag in soup(["script", "style", "noscript", "svg", "img", "iframe"]):
+        tag.decompose()
+
+    preferred_selectors = [
+        "main",
+        "article",
+        '[role="main"]',
+        ".privacy-policy",
+        "#privacy-policy",
+        ".policy",
+        "#policy",
+        ".content",
+        "#content",
+        ".main-content",
+        "#main-content",
+    ]
+
+    for selector in preferred_selectors:
+        node = soup.select_one(selector)
+        if node:
+            text = node.get_text(separator="\n", strip=True)
+            text = re.sub(r"\n{3,}", "\n\n", text)
+            text = re.sub(r"[ \t]{2,}", " ", text)
+            if len(text) > 300:
+                return text.strip()
+
+    body = soup.body if soup.body else soup
+    text = body.get_text(separator="\n", strip=True)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()
+
+
+def extract_text_from_html(html: str, document_type: str) -> str:
+    """
+    Extrahiert Haupttext aus HTML abhängig vom Dokumenttyp.
+
+    document_type:
+    - 'privacy_policy': eher präzise Extraktion
+    - 'landing_page': eher recall-orientierte Extraktion
+
+    Zuerst wird trafilatura versucht.
+    Falls das fehlschlägt oder keinen Text liefert, wird BeautifulSoup-Fallback genutzt.
+    """
+    if not html:
+        return ""
+
+    if document_type == "privacy_policy":
+        options = dict(
+            output_format="txt",
+            include_comments=False,
+            include_tables=False,
+            include_images=False,
+            favor_precision=True,
+            favor_recall=False,
+        )
+    elif document_type == "landing_page":
+        options = dict(
+            output_format="txt",
+            include_comments=False,
+            include_tables=True,
+            include_images=False,
+            favor_precision=False,
+            favor_recall=True,
+        )
     else:
-        noprotocolluri = uri[4:]
-    return noprotocolluri
+        return fallback_bs4_text(html)
+
+    try:
+        text = trafilatura.extract(html, **options)
+        if text and text.strip():
+            return text.strip()
+    except Exception:
+        pass
+
+    return fallback_bs4_text(html)
 
 
-def filenamesplitter(filename):
-    identifier = filename.split("_")
-    host = identifier[0]
-    uri = identifier[1]
-    crawl = identifier[len(identifier) - 1]
-    # if the uri contained an underscore this reconstructs the full uri
-    if len(identifier) > 3:
-        uri = ""
-        for part in identifier:
-            if identifier.index(part) not in [0, len(identifier) - 1]:
-                uri += part + "_"
-        uri = uri[:-1]
-        uri = stripprotocol(uri)
-    return host, uri, crawl
+def detect_file_encoding(path: Path) -> str:
+    """
+    Schätzt das Encoding einer Datei mit chardet.
 
-
-def text_extraction_module():
-
-    def html_encoding_detection(page_path):
-        detector = UniversalDetector()
-        detector.reset()
-        with open(page_path, "rb") as f:
+    Rückgabe:
+        Erkannter Encoding-Name oder 'utf-8' als Fallback.
+    """
+    detector = UniversalDetector()
+    try:
+        with path.open("rb") as f:
             for line in f:
                 detector.feed(line)
                 if detector.done:
                     break
         detector.close()
-        return detector.result["encoding"]
+        encoding = detector.result.get("encoding")
+        return encoding if encoding else "utf-8"
+    except Exception:
+        return "utf-8"
 
-    def htmlfile_opener(page_path):
-        encoding = html_encoding_detection(page_path)
-        raw_html = None
-        with open(page_path, mode="r", encoding=encoding, errors="ignore") as fin:
-            raw_html = fin.read()
-            fin.close()
-        return raw_html
 
-    def text_from_html_extraction_canola(raw_html):
-        """Remove HTML/XML using Conola settings of Boilerpipe
-        https://github.com/misja/python-boilerpipe
-        """
-        text = ""
-        if raw_html:
+def read_text_file(path: Path) -> str:
+    """
+    Liest eine Textdatei robust ein.
+
+    Ablauf:
+    1. Encoding automatisch erkennen
+    2. Datei mit erkanntem Encoding lesen
+    3. Falls das fehlschlägt: UTF-8-Fallback
+    4. Falls alles fehlschlägt: leerer String
+
+    Rückgabe:
+        Dateiinhalt als String.
+    """
+    try:
+        encoding = detect_file_encoding(path)
+        return path.read_text(encoding=encoding, errors="ignore")
+    except Exception:
+        try:
+            return path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return ""
+
+
+def normalize_to_list(value: Any) -> list[str]:
+    """
+    Normalisiert einen Wert zu einer Liste von Strings.
+
+    Fälle:
+    - None -> []
+    - list -> Liste von Strings
+    - nichtleerer String -> [string]
+    - sonst -> []
+
+    Das ist hilfreich, weil manche JSON-Felder mal String,
+    mal Liste, mal leer sein können.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value if v]
+    if isinstance(value, str) and value.strip():
+        return [value]
+    return []
+
+
+def process_json_file(path: Path) -> list[dict]:
+    """
+    Verarbeitet eine .ndjson-Datei und erzeugt extrahierte Text-Records.
+
+    Aus jedem JSON-Record werden, falls vorhanden:
+    1. Privacy-Policy-Dateien gelesen und extrahiert
+    2. Landing-Page-Datei gelesen und extrahiert
+
+    Rückgabe:
+        Liste von Records mit Metadaten und extrahiertem Text.
+    """
+    records = []
+
+    try:
+        with path.open("r", encoding="utf-8", errors="ignore") as f:
+            for idx, line in enumerate(f):
+                line = line.strip()
+                if not line:
+                    continue
+
+                try:
+                    data = json.loads(line)
+                except Exception:
+                    continue
+
+                domain = data.get("domain", "")
+                crawl_id = data.get("crawl_id", "")
+                landing_url = data.get("landing_url", "")
+
+                privacy_files = normalize_to_list(data.get("privacy_policy_file"))
+                privacy_urls = normalize_to_list(data.get("privacy_policy_url"))
+
+                for j, file_path in enumerate(privacy_files):
+                    p = Path(file_path)
+                    html = read_text_file(p)
+                    if not html:
+                        continue
+
+                    text = extract_text_from_html(html, "privacy_policy")
+                    if not text:
+                        continue
+
+                    url = privacy_urls[j] if j < len(privacy_urls) else ""
+
+                    records.append({
+                        "source_ndjson": str(path),
+                        "record_index": f"{idx}-pp-{j}",
+                        "domain": domain,
+                        "crawl_id": crawl_id,
+                        "landing_url": landing_url,
+                        "document_type": "privacy_policy",
+                        "source_file": str(p),
+                        "source_url": url,
+                        "chars": len(text),
+                        "text": text,
+                    })
+
+                landing_file = data.get("landing_page")
+                if isinstance(landing_file, str) and landing_file.strip():
+                    p = Path(landing_file)
+                    html = read_text_file(p)
+                    if html:
+                        text = extract_text_from_html(html, "landing_page")
+                        if text:
+                            records.append({
+                                "source_ndjson": str(path),
+                                "record_index": f"{idx}-landing",
+                                "domain": domain,
+                                "crawl_id": crawl_id,
+                                "landing_url": landing_url,
+                                "document_type": "landing_page",
+                                "source_file": str(p),
+                                "source_url": landing_url,
+                                "chars": len(text),
+                                "text": text,
+                            })
+
+    except Exception:
+        return []
+
+    return records
+
+
+def process_input_file(path: Path) -> list[dict]:
+    """
+    Leitet die Verarbeitung einer Input-Datei an die passende Funktion weiter.
+
+    Aktuell unterstützt:
+    - .ndjson -> process_json_file()
+
+    Rückgabe:
+        Liste von extrahierten Records.
+    """
+    if path.suffix.lower() == ".ndjson":
+        return process_json_file(path)
+    return []
+
+
+def text_extraction_module(datadir: Path, output: Path) -> None:
+    """
+    Phase 1 der Pipeline: Text-Extraktion.
+
+    Ablauf:
+    1. Sucht alle Input-Dateien im datadir
+    2. Verarbeitet jede Datei
+    3. Schreibt alle extrahierten Records in eine JSONL-Datei
+
+    Ausgabe:
+        JSONL-Datei mit Texten aus Privacy Policies und Landing Pages.
+    """
+    files = list(iter_input_files(datadir))
+    if not files:
+        raise FileNotFoundError(f"Keine passenden Input-Dateien gefunden unter: {datadir}")
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    total_records = 0
+
+    with output.open("w", encoding="utf-8") as fout:
+        for path in tqdm(files, desc="Extracting"):
+            records = process_input_file(path)
+            if records:
+                for rec in records:
+                    fout.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                    total_records += 1
+
+    print("Fertig.")
+    print(f"Geschriebene Records: {total_records}")
+    print(f"Output: {output}")
+
+
+def language_detection_module(input_jsonl: Path, output_jsonl: Path) -> None:
+    """
+    Phase 2 der Pipeline: Sprachdetektion.
+
+    Liest die extrahierten Texte aus Phase 1 und verarbeitet nur Records
+    vom Typ 'privacy_policy'.
+
+    Pro Record werden ergänzt:
+    - bereinigter Text
+    - language
+    - language_confidence
+
+    Ausgabe:
+        JSONL-Datei mit Sprachinformationen.
+    """
+    output_jsonl.parent.mkdir(parents=True, exist_ok=True)
+
+    total_in = 0
+    total_out = 0
+    skipped_non_policy = 0
+
+    with input_jsonl.open("r", encoding="utf-8") as fin, \
+         output_jsonl.open("w", encoding="utf-8") as fout:
+
+        for line in tqdm(fin, desc="Language detection"):
+            line = line.strip()
+            if not line:
+                continue
+
+            total_in += 1
+
             try:
-                extractor = Extractor(extractor="CanolaExtractor", html=raw_html)
-                text = str(extractor.getText())
-            except:
-                traceback.print_exc()
-        return text
+                record = json.loads(line)
+            except Exception:
+                continue
 
-    def text_from_html_extraction_keepeverything(raw_html):
-        """Remove HTML/XML using Conola settings of Boilerpipe
-        https://github.com/misja/python-boilerpipe
-        """
+            if record.get("document_type") != "privacy_policy":
+                skipped_non_policy += 1
+                continue
 
-        text = ""
-        if raw_html:
+            original_text = record.get("text", "")
+            cleaned_text = repair_encoding_errors(original_text)
+            language, confidence = detect_language(cleaned_text)
+
+            record["text"] = cleaned_text
+            record["language"] = language
+            record["language_confidence"] = confidence
+            record["has_detected_language"] = str(language).strip().lower() not in {"unknown", "mixed"}
+
+            fout.write(json.dumps(record, ensure_ascii=False) + "\n")
+            total_out += 1
+
+    print("Fertig.")
+    print(f"Input records gelesen: {total_in}")
+    print(f"Nicht-Privacy-Policy übersprungen: {skipped_non_policy}")
+    print(f"Output records geschrieben: {total_out}")
+    print(f"Output: {output_jsonl}")
+
+
+def classify_policy_with_mistral(
+    text: str,
+    language: str = "unknown",
+    language_confidence: float | None = None,
+) -> tuple[str, str]:
+    """
+    Klassifiziert einen extrahierten Text als keep/drop.
+
+    Wichtig:
+    - Die Sprache wurde vorher in Step 2 erkannt.
+    - Die Sprache dient hier nur als Kontext.
+    - Die inhaltliche Entscheidung trifft der Classifier.
+    - mixed/unknown wird NICHT automatisch gedroppt.
+
+    Rückgabe:
+        (label, reason)
+
+    label:
+        "keep" oder "drop"
+
+    reason:
+        kurze faktische Begründung
+    """
+    cleaned = repair_encoding_errors(text).strip()
+
+    if not cleaned:
+        return "drop", "The text is empty."
+
+    client = get_ki_client(KI_POLICY_TIMEOUT)
+
+    sample = cleaned[:KI_POLICY_MAX_CHARS]
+
+    system_prompt = """
+You are a text-classification assistant for privacy-policy crawling.
+
+Decide whether the provided text content should be kept as privacy-relevant content or dropped.
+
+Important scope:
+- Classify only the provided text content.
+- Do not classify based on the URL.
+- Do not classify based on the domain.
+- Do not classify based on the detected language.
+- The detected language is only context.
+
+The text may:
+- be in any language
+- be noisy, incomplete, or badly extracted
+- contain HTML, boilerplate, cookie banners, navigation, duplicated blocks
+- contain fragments only
+- include mixed privacy + unrelated content
+
+Goal:
+Keep real privacy-relevant content, but drop obvious false positives.
+
+Return exactly one JSON object:
+{"label":"keep|drop","reason":"one short sentence"}
+
+Return "keep" if the text clearly contains concrete privacy-relevant information, such as:
+- privacy policy, privacy notice, data protection statement
+- personal data collection, processing, storage, sharing, deletion
+- legal bases such as consent, legitimate interests, GDPR, DSGVO, CCPA
+- user/data-subject rights
+- controller, processor, DPO, supervisory authority
+- retention periods, data categories, recipients, international transfers
+- privacy contact information
+- cookie or consent explanations as part of broader privacy/data processing
+- terms of service with clear personal-data processing information
+- privacy contact information such as DPO, privacy office, data protection authority, or data-subject rights contact
+
+Return "drop" if the text is mainly:
+- only a cookie banner or consent UI with buttons like accept/reject/manage
+- only language selection or a list of language names
+- only UI menu, navigation, footer, header, login, FAQ, contact, about page
+- terms without clear privacy relevance
+- imprint, accessibility, shipping, refund, unrelated boilerplate
+- raw code, empty, near-empty, or unrelated content
+
+Very important negative rules:
+- A language-selection list must be classified as "drop".
+- A list of language names such as Deutsch, English, Español, Français, Italiano, Nederlands, Polski, Português, etc. must be classified as "drop".
+- Do not classify a language menu as "keep" only because it comes from a consent or privacy-related URL.
+- Do not classify a text as "keep" only because it contains words like privacy, consent, cookies, terms, GDPR, or policy in a menu or link.
+- Keep consent-related text only if it explains personal-data processing, legal basis, tracking, cookies, identifiers, user rights, or similar privacy-relevant facts.
+- If cookies are only button-based UI without explanation, return "drop".
+- If ambiguous and no clear privacy evidence is present in the text, return "drop".
+- A mere link or reference to a privacy policy is not enough for "keep".
+- Contact information alone is not enough for "keep" unless it is clearly privacy-specific contact information such as DPO, privacy office, data protection authority, or data-subject rights contact.
+
+Reason:
+- one short factual sentence only
+- use concrete evidence from the text
+- do not speculate or add information not present in the text
+- keep it short and factual
+
+Return only JSON.
+Do not use markdown.
+Do not add explanations outside the JSON.
+""".strip()
+
+    user_prompt = f"""
+Detected language: {language}
+Language confidence: {language_confidence}
+
+Text:
+\"\"\"
+{sample}
+\"\"\"
+""".strip()
+
+    try:
+        resp = client.chat.completions.create(
+            model=KI_MODEL_POLICY,
+            temperature=0.0,
+            top_p=1.0,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+
+        raw_answer = resp.choices[0].message.content.strip()
+
+        parsed = _extract_first_json_object(raw_answer)
+
+        if not parsed:
+            print("[MISTRAL POLICY RAW RESPONSE]", raw_answer, flush=True)
+            return "drop", "Mistral did not return valid JSON."
+
+        label = str(parsed.get("label", "drop")).strip().lower()
+        reason = str(parsed.get("reason", "")).strip()
+
+        if label not in {"keep", "drop"}:
+            print("[MISTRAL POLICY INVALID LABEL]", raw_answer, flush=True)
+            return "drop", "Mistral returned an invalid label."
+
+        if not reason:
+            reason = "Mistral returned no reason."
+
+        return label, reason
+
+    except Exception as e:
+        print(f"[MISTRAL POLICY DETECTION ERROR] {e}", flush=True)
+        return "drop", "Request to Mistral failed."
+
+
+def policy_detection_module(input_jsonl: Path, output_jsonl: Path) -> None:
+    """
+    Phase 3 der Pipeline: Policy Detection / Keep-Drop-Classification.
+
+    Input:
+        extraction_lang.jsonl aus Step 2
+
+    Wichtig:
+        Die Language Detection entscheidet nur die Sprache.
+        Die Classification entscheidet keep/drop.
+
+        Deshalb wird hier NICHT automatisch nach language, mixed,
+        unknown oder has_detected_language gefiltert.
+
+    Pro Record werden ergänzt:
+        - policy_detection_label
+        - policy_detection_reason
+    """
+    output_jsonl.parent.mkdir(parents=True, exist_ok=True)
+
+    total_in = 0
+    total_out = 0
+    kept = 0
+    dropped = 0
+
+    with input_jsonl.open("r", encoding="utf-8") as fin, \
+         output_jsonl.open("w", encoding="utf-8") as fout:
+
+        for line in tqdm(fin, desc="Policy detection"):
+            line = line.strip()
+            if not line:
+                continue
+
+            total_in += 1
+
             try:
-                extractor = Extractor(extractor="KeepEverythingExtractor", html=raw_html)
-                text = str(extractor.getText())
-            except:
-                traceback.print_exc()
-        return text
+                record = json.loads(line)
+            except Exception:
+                continue
 
-    def text_from_html_extraction_readability(raw_html):
-        """
-        remove HTML/XML with
-        https://github.com/alan-turing-institute/ReadabiliPy
-        """
-        text = ""
-        timeout = 10
-        try:
-            # throws memory erros for > 6.3MB files dispite updating node.js and Readability.js (2023.02.07)
-            # Alternativly "while psutil.virtual_memory.percent < 50" but does not determine the amuont of memory this function/process is using. 
-            with stopit.ThreadingTimeout(timeout) as context_manager:
-                # https://theautomatic.net/2021/11/27/how-to-stop-long-running-code-in-python/
-                result = simple_json_from_html_string(raw_html, use_readability=True)
-                title = result["title"]
-                if title is None:
-                    title = ""
-                plain_text = result["plain_text"][-1]["text"]
-                if plain_text is None:
-                    plain_text = ""
-                text = title + "\n\n" + plain_text
-            if context_manager.state == context_manager.TIMED_OUT:
-                text = ""
-            elif context_manager.state == context_manager.EXECUTED:
-                pass
-        except:
-            text = ""
-        return text
+            text = record.get("text", "")
+            language = record.get("language", "unknown")
+            language_confidence = record.get("language_confidence")
 
-    def text_from_html_extraction_numwordsrules(raw_html):
-        """Remove HTML/XML using NumWordsRules setting of Boilerpipe
-        https://github.com/misja/python-boilerpipe
-        """
-        text = ""
-        if raw_html:
-            try:
-                extractor = Extractor(extractor="NumWordsRulesExtractor", html=raw_html)
-                text = str(extractor.getText())
-            except:
-                traceback.print_exc()
-        return text
+            label, reason = classify_policy_with_mistral(
+                text=text,
+                language=language,
+                language_confidence=language_confidence,
+            )
 
-    def markdown_from_html_extraction_markdownify(raw_html):
-        """Convert HTML/XML to Markdown format using
-        https://github.com/matthewwithanm/python-markdownify
-        """
-        text = ""
-        try:
-            unwanted_tags = ["nav", "header", "footer"]
-            soup = BeautifulSoup(raw_html, "lxml")
-            _ = [tag.decompose() for tag in soup(unwanted_tags)]
-            text = md(str(soup))
-            # body = soup.find("body")
-            # text = md(raw_html)
+            out_record = {
+                "record_index": record.get("record_index"),
+                "domain": record.get("domain"),
+                "crawl_id": record.get("crawl_id"),
+                "source_url": record.get("source_url"),
+                "source_file": record.get("source_file"),
+                "document_type": record.get("document_type"),
 
-        except:
-            traceback.print_exc()
-            sys.exit()
-        return text
+                "language": language,
+                "language_confidence": language_confidence,
+                "has_detected_language": record.get("has_detected_language"),
 
-    def text_from_pdf_extractor(pdf_path):
-        text = ""
-        try:
-            with fitz.open(pdf_path) as doc:
-                for page in doc:
-                    text += page.get_text()
-        except:
-            traceback.print_exc()
+                "chars": record.get("chars"),
 
-        return text
+                "policy_detection_label": label,
+                "policy_detection_reason": reason,
 
-    def makeSimhash(text):
-        #https://github.com/seomoz/simhash-py/issues/47
-        import ctypes
-        list_of_tokens = re.split('\s+', re.sub(r'[^\w\s]', '', text.lower()))
-        # A generator for ' '-joined strings of consecutive tokens
-        shingles = (' '.join(tokens) for tokens in simhash.shingle(list_of_tokens, 4))
-        # They need to be unsigned 64-bit ints
-        return simhash.compute([ctypes.c_ulong(hash(shingle)).value for shingle in shingles])
-
-    def makeSHA1hash(text):
-        hashvalue = hashlib.sha1(text.encode()).hexdigest()
-        return hashvalue
-
-    def process_policies(item, data_dir, california_policy, page):
-        temp_dict = None
-        landing_text = ""
-        plain_text = ""
-        plain_text_readability = ""
-        plain_text_canola = ""
-        markdown_text = ""
-        try:
-            landing_page_path = item["landing_page"]
-            landing_page_path = os.path.join(data_dir, "landing_pages", landing_page_path.split("/")[-1])
-            raw_landing_html = htmlfile_opener(landing_page_path) # Encoding Detection
-            landing_html = sanitizer.sanitize(raw_landing_html)
-            # Debug: print("sanitized landing page", flush=True)
-            landing_text = text_from_html_extraction_keepeverything(landing_html)
-            # Debug: print("keepeverything landing page", flush=True)
-            if california_policy is False:
-                page_path = os.path.join(data_dir, "privacy_policies", page.split("/")[-1])
-            elif california_policy is True:
-                page_path = os.path.join(data_dir, "california_privacy_pages", page.split("/")[-1])
-            if os.path.splitext(page)[1] not in {".pdf"}:
-                raw_html = htmlfile_opener(page_path) # Encoding Detection
-                # Debug: print("opened privacy policy", flush=True)
-                raw_html = sanitizer.sanitize(raw_html)
-                # Debug: print("sanitized privacy policy", flush=True)
-                plain_text = text_from_html_extraction_numwordsrules(raw_html)
-                # Debug: print("numworldsrules privacy policy", flush=True)
-                plain_text_readability = text_from_html_extraction_readability(raw_html) 
-                # Debug: print("readability privacy policy", flush=True)
-                plain_text_canola = text_from_html_extraction_canola(raw_html)
-                # Debug: print("canola privacy policy", flush=True)
-                markdown_text = markdown_from_html_extraction_markdownify(raw_html)
-                # Debug: print("markdown privacy policy", flush=True)
-            elif os.path.splitext(page)[1] in {".pdf"}:
-                plain_text = text_from_pdf_extractor(page_path)
-            temp_dict = {
-                "TextID": str(i) + "_" + crawl,
-                "CrawlID": item["crawl_id"],
-                "Domain_origin": domain_cleaner(item["domain"]),
-                "Landing_URL": item["landing_url"],
-                "URL": url,
-                "Policy_domain": get_fld(unquote(url.lstrip("%3A%2F%2F")), fail_silently=True, fix_protocol=True),
-                "Crawl": crawl,
-                "Landing_Text": landing_text,
-                "Text": plain_text,
-                "Text_Canola":plain_text_canola,
-                "Text_Readability": plain_text_readability,
-                "Text_Markdown": markdown_text,
-                "SHA1": makeSHA1hash(plain_text),
-                "Simhash": makeSimhash(plain_text),
-                "Type":"californiapolicy" if california_policy is True else "privacypolicy"
+                "text_preview": repair_encoding_errors(text)[:500],
             }
-        except:
-            print(page_path, flush=True)
-            traceback.print_exc()
-            temp_dict = None
-        return temp_dict
 
+            fout.write(json.dumps(out_record, ensure_ascii=False) + "\n")
+            total_out += 1
 
-    storage = CachingMiddleware(JSONStorage)
-    storage.WRITE_CACHE_SIZE = 25
-    db = TinyDB(
-        os.path.join(data_dir, "CPRA_policies_database_" + crawl + ".json"),
-        storage=storage
-    )
-    table_policies = db.table("policies")
-
-    # function entry point
-    # read existing data
-    pages = os.listdir(data_dir)
-    if len(pages) == 0:
-        print("The folder you specified (" + data_dir + ") does not contain any files", flush=True)
-        sys.exit()
-
-    with open(data_dir + "/crawl-data.ndjson", encoding="utf-8", mode="r") as f:
-        i = 1
-        reader = ndjson.reader(f)
-        for item in tqdm(reader, desc="Domain item"):
-            # try:
-                # item = json.loads(line.strip())
-                # 'domain'
-                # 'crawl_id'
-                # 'landing_url'
-                # 'landing_page'
-                # 'privacy_policy_url'
-                # 'privacy_policy_file'
-                # 'california_url'
-                # 'california_file'
-            # except json.decoder.JSONDecodeError as e:
-            #     traceback.print_exc()
-            #     print(line[e.pos-5:e.pos+5])
-            #     print()
-            
-            try:
-                assert len(item["privacy_policy_file"]) == len(item["privacy_policy_url"])
-            except AssertionError:
-                print(item, flush=True)
-                continue
-
-            try:
-                assert len(item["california_url"]) == len(item["california_file"])
-            except AssertionError:
-                print(item, flush=True)
-                continue
-            if len(item["privacy_policy_file"]) > 0: # if a privacy policy was found during the crawl
-                for url, page in zip(item["privacy_policy_url"], item["privacy_policy_file"]): # real url and file on hard drive
-                    try:
-                        policy = Query()
-                        result = table_policies.search((policy.Domain_origin == domain_cleaner(item["domain"])) & (policy.URL == url) & (policy.Landing_URL == item["landing_url"]) & (policy.Type == "privacypolicy"))
-                        if len(result) == 0:
-                            # Debug: print(f'Processing privacy policy {page} of {item["domain"]}', flush=True)
-                            temp_dict = process_policies(item, data_dir, False, page)
-                            if temp_dict is not None:
-                                # Debug: print(f'Inserting privacy policy {page} of {item["domain"]}', flush=True)
-                                table_policies.upsert(temp_dict, tinydb_where("TextID") == str(i) + "_" + crawl)
-                                i = i+1
-                            else:
-                                continue
-                        elif len(result) == 1:
-                            print("Already exists in the database:", url, flush=True)
-                            i = i+1
-                            continue
-                        elif len(result) > 1:
-                            print("Too many results for", domain_cleaner(item["domain"]), flush=True)
-                            continue
-                    except:
-                        traceback.print_exc()
-                        continue
-            if len(item["california_file"]) > 0: # if a california policy was found during the crawl
-                for url, page in zip(item["california_url"], item["california_file"]): # real url and url on hard drive
-                    try:
-                        policy = Query()
-                        result = table_policies.search((policy.Domain_origin == domain_cleaner(item["domain"])) & (policy.URL == url) & (policy.Landing_URL == item["landing_url"]) & (policy.Type == "californiapolicy"))
-                        if len(result) == 0:
-                            # Debug: print(f'Processing california policy {page} of {item["domain"]}', flush=True)
-                            temp_dict = process_policies(item, data_dir, True, page)
-                            if temp_dict is not None:
-                                # Debug: print(f'Processing california policy {page} of {item["domain"]}', flush=True)
-                                table_policies.upsert(temp_dict, tinydb_where("TextID") == str(i) + "_" + crawl)
-                                i = i+1
-                            else:
-                                continue
-                        elif len(result) == 1:
-                            print("Already exists in the database:", url, flush=True)
-                            i = i+1
-                            continue
-                        elif len(result) > 1:
-                            print("Too many results for", domain_cleaner(item["domain"]), flush=True)
-                    except:
-                        traceback.print_exc()
-                        continue
-    db.close()
-    print("End time: ", str(datetime.datetime.now()), flush=True)
-
-def language_detection_module():
-    """Performs majority voting on the detected languages by the libraries"""
-
-    def segment_multilingual_policies(vectors, text):
-        """segments privacy policies by language if desired
-            by using the output vectors of CLD2
-        """
-        list_of_segments = []
-        text_as_bytes = text.encode("utf-8")
-        for vector in vectors:
-            start = vector[0]
-            end = start + vector[1]
-            segment = text_as_bytes[start:end].decode("utf-8")
-            list_of_segments.append(segment)
-        return list_of_segments
-
-    def language_detection(text):
-
-        ## prepare components ##
-        DetectorFactory.seed = 0
-
-        fasttext_model = fasttext.load_model("./code/resources/lid.176.bin")
-
-        word_re = re.compile(
-            r"\w+", re.IGNORECASE | re.DOTALL | re.UNICODE | re.MULTILINE
-        )
-
-        # Just keep the words
-        raw_text = textacy_preprocessing.replace.urls(
-            textacy_preprocessing.replace.emails(text, ""), ""
-        )
-        raw_text = textacy_preprocessing.replace.phone_numbers(raw_text, "")
-        raw_text = word_re.findall(raw_text)
-
-        if len(raw_text) > 10:
-            raw_text = " ".join(raw_text)
-            dict_of_detected_languages = {}
-            dict_of_detection_probabilies = {}
-
-            # 1. https://github.com/Mimino666/langdetect
-            DetectorFactory.seed = 0
-            try:
-                dict_of_detected_languages["langdetect"] = detect(raw_text).lower()
-                dict_of_detection_probabilies["langdetect_probablities"] = [
-                    (item.lang, item.prob) for item in detect_langs(raw_text)
-                ]
-            except lang_detect_exception.LangDetectException:
-                traceback.print_exc()
-                dict_of_detected_languages["langdetect"] = "un"
-                dict_of_detection_probabilies["langdetect_probablities"] = []
-
-            # 2. https://github.com/aboSamoor/pycld2
-            try:
-                isReliable, _, details, vectors = cld2.detect(
-                    raw_text, returnVectors=True
-                )
-                if isReliable:
-                    # utf-8 bytes issue with meaningless "un"
-                    dict_of_detected_languages["pycld2"] = [
-                        detail[1].lower() for detail in details if detail[2] != 0
-                    ]
-                    dict_of_detection_probabilies["pycld2_vectors"] = list(vectors)
-                else:
-                    dict_of_detected_languages["pycld2"] = ["un"]
-                    dict_of_detection_probabilies["pycld2_vectors"] = ()
-            except:
-                traceback.print_exc()
-                dict_of_detected_languages["pycld2"] = ["un"]
-                dict_of_detection_probabilies["pycld2_vectors"] = ()
-
-            # 3. https://github.com/saffsd/langid.py
-            try:
-                from langid.langid import LanguageIdentifier, model
-
-                langid_identifier = LanguageIdentifier.from_modelstring(
-                    model, norm_probs=True
-                )
-                langid_tuple = langid_identifier.classify(raw_text)
-                dict_of_detected_languages["langid"] = langid_tuple[0].lower()
-                dict_of_detection_probabilies["langid_probability"] = langid_tuple
-            except:
-                traceback.print_exc()
-                dict_of_detected_languages["langid"] = "un"
-                dict_of_detection_probabilies["langid_probability"] = ()
-
-            # 4. https://bitbucket.org/spirit/guess_language/
-            try:
-                dict_of_detected_languages["guess_language"] = guess_language(
-                    raw_text
-                ).lower()
-            except:
-                traceback.print_exc()
-                dict_of_detected_languages["guess_language"] = "un"
-
-            # 5. https://github.com/facebookresearch/fastText/tree/master/python
-            # https://fasttext.cc/docs/en/language-identification.html
-            try:
-                dict_of_detected_languages["fasttext"] = (
-                    fasttext_model.predict(raw_text)[0][0]
-                    .replace("__label__", "")
-                    .lower()
-                )
-                dict_of_detection_probabilies[
-                    "fasttext_probability"
-                ] = fasttext_model.predict(raw_text)[1]
-            except:
-                traceback.print_exc()
-                dict_of_detected_languages["fasttext"] = "un"
-                dict_of_detection_probabilies["fasttext_probability"] = 0
-
-            # 6. https://github.com/chartbeat-labs/textacy/blob/master/textacy/lang_utils.py
-            try:
-                dict_of_detected_languages[
-                    "textacy"
-                ] = textacy.identify_lang(raw_text).lower()
-            except:
-                #traceback.print_exc()
-                dict_of_detected_languages["textacy"] = "un"
-
-            # 7. https://github.com/bsolomon1124/pycld3
-            try:
-                tuple_of_detected_language = cld3.get_language(raw_text)
-                isReliable = tuple_of_detected_language[2]
-                if isReliable:  # is_reliable
-                    dict_of_detected_languages["cld3"] = tuple_of_detected_language[
-                        0
-                    ].lower()
-                    dict_of_detection_probabilies[
-                        "cld3_probabilities"
-                    ] = cld3.get_frequent_languages(raw_text, num_langs=10)
-                else:
-                    dict_of_detected_languages["cld3"] = "un"
-                    dict_of_detection_probabilies[
-                        "cld3_probabilities"
-                    ] = cld3.get_frequent_languages(raw_text, num_langs=10)
-            except:
-                traceback.print_exc()
-                dict_of_detected_languages["cld3"] = "un"
-                dict_of_detection_probabilies["cld3_probabilities"] = []
-
-            list_of_all_detected_languages = list(
-                flatten(dict_of_detected_languages.values())
-            )
-            list_of_all_detected_languages = [
-                v if not v.startswith("zh") else "zh"
-                for v in list_of_all_detected_languages
-            ]
-            list_of_all_detected_languages = [
-                v
-                if (v not in ("unknown", "UNKNOWN", "UNKNOWN_LANGUAGE"))
-                else "un"
-                for v in list_of_all_detected_languages
-            ]
-            try:
-                determined_language = statistics.mode(list_of_all_detected_languages)
-            except statistics.StatisticsError:
-                determined_language = "no-majority-achieved"
-
-            # handling multilingual cases
-            if (
-                len(dict_of_detected_languages["pycld2"]) > 1
-                or len(dict_of_detection_probabilies["cld3_probabilities"]) > 1
-            ):
-                multilingual = True
+            if label == "keep":
+                kept += 1
             else:
-                multilingual = False
+                dropped += 1
 
-            # possibility for superflous strings as described in the paper
-            if len(set(list_of_all_detected_languages))==1 and multilingual is True:
-                recheck = True # Mark to check whether CanolaExtractor or Readability.js could provide purer plain text
-            else:
-                recheck = False
-
-        else:
-            determined_language = "too-short-text"
-            dict_of_detected_languages = {}
-            dict_of_detection_probabilies = {}
-            multilingual = False
-            recheck = False
-
-        return (
-            determined_language,
-            dict_of_detected_languages,
-            dict_of_detection_probabilies,
-            multilingual,
-            recheck
-        )
-
-    print("Start time: ", str(datetime.datetime.now()), flush=True)
-    storage = CachingMiddleware(JSONStorage)
-    storage.WRITE_CACHE_SIZE = 25
-    db = TinyDB(
-        os.path.join(data_dir, "CPRA_policies_database_" + crawl + ".json"),
-        storage=storage
-    )
-    language_table = db.table("policies_language")
-
-    list_of_texts, list_of_ids = load_data_of_text_policies(db, language=None)
-
-    if not os.path.exists("./code/resources/lid.176.bin"):
-        Path("./code/resources/").mkdir(parents=True, exist_ok=True)
-
-        print("Downloading language model of FastText ...", flush=True)
-        request.urlretrieve("https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin", "code/resources/lid.176.bin")
+    print("Fertig.")
+    print(f"Input records gelesen: {total_in}")
+    print(f"Output records geschrieben: {total_out}")
+    print(f"Keep: {kept}")
+    print(f"Drop: {dropped}")
+    print(f"Output: {output_jsonl}")
 
 
-    print("Start language detection", flush=True)
-    res = Parallel(n_jobs=-1)(
-        delayed(language_detection)(text) for text in tqdm(list_of_texts)
+def main():
+    """
+    Einstiegspunkt des Skripts.
+
+    Aufgaben:
+    1. Liest Kommandozeilenargumente
+    2. Führt Phase 1: Text-Extraktion aus
+    3. Führt Phase 2: Sprachdetektion aus
+    4. Führt Phase 3: Klassification aus
+
+    Damit wird die bisherige 3-stufige Pipeline vollständig gestartet.
+    """
+    parser = argparse.ArgumentParser(description="Privacy Policy Toolchain")
+
+    parser.add_argument(
+        "--input",
+        type=Path,
+        required=True,
+        help="Pfad zu datadir_*"
     )
 
-    print("Finished language detection", flush=True)
-
-    del list_of_texts
-    list_of_determined_languages = [item[0] for item in res]  # list
-    list_of_dicts_with_all_detected_languages = [item[1] for item in res]
-    list_of_dicts_with_detection_probabilities = [item[2] for item in res]
-    list_of_multilingual_booleans = [item[3] for item in res]
-    list_of_rechecks_booleans = [item[4] for item in res]
-
-    del res
-
-    print(
-        "Most common languages: {}".format(
-            dict(Counter(list_of_determined_languages).most_common(), flush=True)
-        )
+    parser.add_argument(
+        "--extraction-output",
+        type=Path,
+        default=Path("../results/extraction.jsonl"),
+        help="Output Datei für Text-Extraktion"
     )
 
-    for id, language, multilingual, recheck in zip(
-        list_of_ids, list_of_determined_languages, list_of_multilingual_booleans, list_of_rechecks_booleans
-    ):
-        language_table.upsert(
-            {
-                "TextID": id,
-                "DeterminedLanguage": language,
-                "Multilingual": multilingual,
-                "Recheck": recheck
-            }, tinydb_where("TextID") == id
-        )
-
-    df = pd.DataFrame(list_of_determined_languages, columns=["DeterminedLanguage"])
-    df.insert(loc=0, column="TextID", value=list_of_ids)
-    df.insert(loc=1, column="Multilingual", value=list_of_multilingual_booleans)
-    df = pd.concat(
-        [
-            df,
-            pd.DataFrame(list_of_dicts_with_all_detected_languages),
-            pd.DataFrame(list_of_dicts_with_detection_probabilities),
-        ],
-        axis=1,
+    parser.add_argument(
+        "--language-output",
+        type=Path,
+        default=Path("../results/extraction_lang.jsonl"),
+        help="Output Datei für Language Detection"
+    )
+    
+    parser.add_argument(
+        "--policy-output",
+        type=Path,
+        default=Path("../results/policy_detection.jsonl"),
+        help="Output Datei für Policy Detection"
     )
 
+    args = parser.parse_args()
 
-    Path("./logs/language_analysis/").mkdir(parents=True, exist_ok=True)
+    datadir = find_latest_datadir(args.input)
 
-    df.to_json(
-        "./logs/language_analysis/language_detection_probabilities_" + crawl + ".json",
-        orient="records",
-    )
+    print("\n==============================")
+    print("STEP 1: TEXT EXTRACTION")
+    print("==============================")
+    print(f"Arbeite auf: {datadir}")
+    text_extraction_module(datadir, args.extraction_output)
 
-    db.close()
+    print("\n==============================")
+    print("STEP 2: LANGUAGE DETECTION")
+    print("==============================")
+    language_detection_module(args.extraction_output,args.language_output)
 
-    print("End time: ", str(datetime.datetime.now()), flush=True)
-
-
-def keyphrase_extraction_module():
-    def multi_rake(text, language):
-        # https://pypi.org/project/multi-rake/
-        r = Rake(language_code=language)
-        try:
-            keyphrases = r.apply(text)
-            keyphrases = [keyphrase for keyphrase, score in keyphrases]
-            if len(keyphrases) > 20:
-                list_of_keyphrases = keyphrases[:20]
-            else:
-                list_of_keyphrases = keyphrases
-        except:
-            tqdm.write(traceback.format_exc())
-            list_of_keyphrases = []
-        return list_of_keyphrases
-
-    def yake_original(text, language):
-        # https://pypi.org/project/yake/
-        if language == "cs":
-            language = "cz"
-        kwextractor = yake.KeywordExtractor(lan=language)
-        try:
-            keyphrases = kwextractor.extract_keywords(text)
-            keyphrases = [keyphrase for keyphrase, score in keyphrases]
-            if len(keyphrases) > 20:
-                list_of_keyphrases = keyphrases[:20]
-            else:
-                list_of_keyphrases = keyphrases
-        except:
-            tqdm.write(traceback.format_exc())
-            list_of_keyphrases = []
-        return list_of_keyphrases
-
-    def pke_textrank(text, language):
-        # https://github.com/boudinfl/pke
-        extractor = pke.unsupervised.TextRank()
-        try:
-            extractor.load_document(input=text, language=language, normalization="none")
-            extractor.candidate_selection()
-            extractor.candidate_weighting()
-            keyphrases = extractor.get_n_best(n=20)
-            list_of_keyphrases = [keyphrase for keyphrase, score in keyphrases]
-        except:
-            tqdm.write(traceback.format_exc())
-            list_of_keyphrases = []
-        return list_of_keyphrases
-
-    def pke_singlerank(text, language):
-        extractor = pke.unsupervised.SingleRank()
-        try:
-            extractor.load_document(input=text, language=language, normalization="none")
-            extractor.candidate_selection()
-            extractor.candidate_weighting()
-            keyphrases = extractor.get_n_best(n=20)
-            list_of_keyphrases = [keyphrase for keyphrase, score in keyphrases]
-        except:
-            tqdm.write(traceback.format_exc())
-            list_of_keyphrases = []
-        return list_of_keyphrases
-
-    def pke_topicrank(text, language):
-        extractor = pke.unsupervised.TopicRank()
-        try:
-            extractor.load_document(input=text, language=language, normalization="none")
-            extractor.candidate_selection()
-            extractor.candidate_weighting()
-            keyphrases = extractor.get_n_best(n=20)
-            list_of_keyphrases = [keyphrase for keyphrase, score in keyphrases]
-        except:
-            tqdm.write(traceback.format_exc())
-            list_of_keyphrases = []
-        return list_of_keyphrases
-
-    def pke_positionrank(text, language):
-        extractor = pke.unsupervised.PositionRank()
-        try:
-            extractor.load_document(input=text, language=language, normalization="none")
-            extractor.candidate_selection()
-            extractor.candidate_weighting()
-            keyphrases = extractor.get_n_best(n=20)
-            list_of_keyphrases = [keyphrase for keyphrase, score in keyphrases]
-        except:
-            tqdm.write(traceback.format_exc())
-            list_of_keyphrases = []
-        return list_of_keyphrases
-
-    def pke_multipartiterank(text, language):
-        extractor = pke.unsupervised.MultipartiteRank()
-        try:
-            extractor.load_document(input=text, language=language, normalization="none")
-            extractor.candidate_selection()
-            extractor.candidate_weighting()
-            keyphrases = extractor.get_n_best(n=20)
-            list_of_keyphrases = [keyphrase for keyphrase, score in keyphrases]
-        except:
-            tqdm.write(traceback.format_exc())
-            list_of_keyphrases = []
-        return list_of_keyphrases
-
-    def textacy_scake(text, language):
-        try:
-            doc = textacy.make_spacy_doc(text, lang=spacy_languages[language])
-            keyphrases = textacy.extract.keyterms.scake(doc, normalize="lemma", topn=20)
-            list_of_keyphrases = [keyphrase for keyphrase, score in keyphrases]
-        except:
-            tqdm.write(traceback.format_exc())
-            list_of_keyphrases = []
-        return list_of_keyphrases
-
-    print("Start time: ", str(datetime.datetime.now()), flush=True)
-
-    keyphrase_extractors = {
-        "MultiRake": multi_rake,
-        "YakeOriginal": yake_original,
-        "PKE_TextRank": pke_textrank,
-        "PKE_SingleRank": pke_singlerank,
-        "PKE_TopicRank": pke_topicrank,
-        "PKE_PositionRank": pke_positionrank,
-        "PKE_MultipartiteRank": pke_multipartiterank,
-        "Textacy_sCAKE": textacy_scake,
-    }
-
-    groups_of_algorithms = {
-        "misc": ["MultiRake", "YakeOriginal"],
-        "pke": [
-            "PKE_TextRank",
-            "PKE_SingleRank",
-            "PKE_TopicRank",
-            "PKE_PositionRank",
-            "PKE_MultipartiteRank",
-        ],
-        "textacy": ["Textacy_sCAKE"],
-    }
-
-    list_of_languages = ["de", "en"]
-
-    storage = CachingMiddleware(JSONStorage)
-    storage.WRITE_CACHE_SIZE = 25
-    db = TinyDB(
-        os.path.join(data_dir, "CPRA_policies_database_" + crawl + ".json"),
-        storage=storage
-    )
-
-    lemmatized_table = db.table("policies_lemmatized")
-    keyphrase_table = db.table("policies_keyphrases")
-
-    for language in list_of_languages:
-
-        list_of_texts, list_of_IDs = load_data_of_text_policies(db, language=language)
-
-        if len(list_of_IDs) == 0 or len(list_of_texts) == 0:
-            print("Texts were not loaded properly!", flush=True)
-            sys.exit(0)
-
-        list_of_texts = Parallel(n_jobs=-1)(
-            delayed(text_cleaner)(text)
-            for text in tqdm(list_of_texts, desc="Cleaning texts")
-        )
-        list_of_lemmatized_texts = spacy_lemmatizer_with_whitespace(
-            list_of_texts, language
-        )
-        for ID, lemmatized_text in zip(tqdm(list_of_IDs, desc="Save lemmatized text"), list_of_lemmatized_texts):
-            lemmatized_table.upsert(
-                {"TextID": ID, "Language": language, "Lemmatized_Text": lemmatized_text},
-                tinydb_where("TextID") == ID
-            )
-
-        ### MULTIPROCESSING VERSION ###
-        list_of_keyphrase_dicts = []
-        for ID in tqdm(list_of_IDs, desc="List of keyphrase dicts"):
-            list_of_keyphrase_dicts.append({"TextID": ID, "Keyphrases":set()})
-        print("len(list_of_keyphrase_dicts):", len(list_of_keyphrase_dicts), flush=True)
-
-        # Depending on whether the library does lemmatization itself or not, the appropriate list is passed to the function
-        for name, extractor in keyphrase_extractors.items():
-            if name in groups_of_algorithms["textacy"]:
-                list_of_lists_of_keywords = Parallel(n_jobs=-1)(
-                    delayed(extractor)(text, language)
-                    for text in tqdm(list_of_texts, desc=name)
-                )
-            else:
-                list_of_lists_of_keywords = Parallel(n_jobs=-1)(
-                    delayed(extractor)(text, language)
-                    for text in tqdm(list_of_lemmatized_texts, desc=name)
-                )
-
-            for i, ID in enumerate(list_of_IDs):
-                if list_of_keyphrase_dicts[i]["TextID"] == ID:
-                    list_of_keyphrase_dicts[i]["Keyphrases"].update(set(list_of_lists_of_keywords[i]))
-                    # list_of_keyphrase_dicts[i] = {
-                    #     **list_of_keyphrase_dicts[i],
-                    #     **{name: list_of_lists_of_keywords[i]},
-                    # }
-
-        # tinydb does not like sets as they are not serialiseable
-        for keyphrase_dict in list_of_keyphrase_dicts:
-            keyphrase_dict["Keyphrases"] = list(keyphrase_dict["Keyphrases"])
-
-        print("Saving extracted keyphrases", flush=True)
-        assert len(list_of_IDs) == len(list_of_keyphrase_dicts)
-        for ID, keyphrase_dict in zip(tqdm(list_of_IDs), list_of_keyphrase_dicts):
-            keyphrase_table.upsert(keyphrase_dict, tinydb_where("TextID") == ID)
-
-        ### SINGLE PROCESSING VERSION IF MULTIPROCESSING DOES NOT WORK ###
-        # for ID, lemmatized_text, text in zip(tqdm(list_of_IDs, desc="keyphrase extraction"), list_of_lemmatized_texts, list_of_texts):
-        #     keyphrase_dict = {"TextID": ID, "Keyphrases":set()}
-        #     for name, extractor in keyphrase_extractors.items():
-        #         if name in groups_of_algorithms["textacy"]:
-        #             list_of_keywords = extractor(text, language)
-        #         else:
-        #             list_of_keywords = extractor(lemmatized_text, language)
-        #         keyphrase_dict["Keyphrases"].update(set(list_of_keywords))
-        #     keyphrase_dict["Keyphrases"] = list(keyphrase_dict["Keyphrases"])
-        #     keyphrase_table.upsert(keyphrase_dict, tinydb_where("TextID") == ID)
-
-    db.close()
-
-    print("End time: ", str(datetime.datetime.now()), flush=True)
+    print("\n==============================")
+    print("STEP 3: POLICY DETECTION")
+    print("==============================")
+    policy_detection_module(args.language_output, args.policy_output)
 
 
-def policy_detection_module():
+    print("\nPipeline completed successfully.")
 
-    def load_keyphrases(db, language):
-        list_of_lists_of_keyphrases = []
-        print("Loading keyphrases in {}".format(language), flush=True)
-
-        keyphrase_table = db.table("policies_keyphrases")
-        list_of_keyphrase_dicts = keyphrase_table.all()
-
-        language_table = db.table("policies_language")
-        list_of_language_dicts = language_table.search(
-            tinydb_where("DeterminedLanguage") == language
-        )
-        print("list_of_language_dicts: {}".format(len(list_of_language_dicts)), flush=True)
-
-        list_of_language_IDs = [
-            language_dict["TextID"] for language_dict in list_of_language_dicts
-        ]
-
-        del list_of_language_dicts
-
-        list_of_keyphrase_dicts = [
-            keyphrases_dict
-            for keyphrases_dict in list_of_keyphrase_dicts
-            if keyphrases_dict["TextID"] in list_of_language_IDs
-        ]
-
-        list_of_TextIDs = [
-            keyphrase_dict["TextID"] for keyphrase_dict in list_of_keyphrase_dicts
-        ]
-
-        assert sorted(list_of_TextIDs) == sorted(list_of_language_IDs)
-        del list_of_language_IDs
-
-        policies_table = db.table("policies")
-        list_of_policies_dicts = policies_table.all()
-        list_of_URLs = [
-            policy_dict["URL"]
-            for policy_dict in list_of_policies_dicts
-            if policy_dict["TextID"] in list_of_TextIDs
-        ]
-
-        del list_of_policies_dicts
-
-        for keyphrase_dict in list_of_keyphrase_dicts:
-            # list_of_keyphrases = (
-            #     keyphrase_dict["MultiRake"]
-            #     + keyphrase_dict["YakeOriginal"]
-            #     + keyphrase_dict["PKE_TextRank"]
-            #     + keyphrase_dict["PKE_SingleRank"]
-            #     + keyphrase_dict["PKE_TopicRank"]
-            #     + keyphrase_dict["PKE_PositionRank"]
-            #     + keyphrase_dict["PKE_MultipartiteRank"]
-            #     + keyphrase_dict["Textacy_sCAKE"]
-            # )
-            # list_of_lists_of_keyphrases.append(list_of_keyphrases)
-            list_of_lists_of_keyphrases.append(keyphrase_dict["Keyphrases"])
-            
-
-        print(len(list_of_lists_of_keyphrases), flush=True)
-        list_of_lists_of_keyphrases = [
-            list(set([keyphrase.lower() for keyphrase in list_of_keyphrases]))
-            for list_of_keyphrases in list_of_lists_of_keyphrases
-        ]
-        return list_of_TextIDs, list_of_URLs, list_of_lists_of_keyphrases
-
-
-
-    def keyphrase_analyzer(list_of_list_of_keyphrases):
-        all_keywords = []
-        list_of_dict_keyphrases = []
-        number_of_policies = str(len(list_of_list_of_keyphrases))
-        for list_of_keyphrases in list_of_list_of_keyphrases:
-            all_keywords += list_of_keyphrases
-            dict_of_keyphrases = dict(
-                Counter(list_of_keyphrases)
-            )
-            list_of_dict_keyphrases.append(dict_of_keyphrases)
-        print(number_of_policies + " policies:", Counter(all_keywords).most_common(50), flush=True)
-        print("#unique keywords:", len(set(all_keywords)), flush=True)
-
-        return list_of_dict_keyphrases
-
-    def label_determination(
-        language, list_of_dict_keyphrases, list_of_TextIDs, list_of_URLs
-    ):
-
-        print("Loading vectorizer and classifier", flush=True)
-        vectorizer = load(
-            "code/resources/trained_vectorizer_" + language + "_2023-01-22.pkl"
-        )
-        clf = load(
-            "code/resources/VotingClassifier_soft_" + language + "_2023-01-22.pkl"
-        )
-
-        print("Vectorizer transformation", flush=True)
-        X_unlabeled = vectorizer.transform(list_of_dict_keyphrases)
-
-        print("Shape of unlabeled texts: {}".format(X_unlabeled.shape), flush=True)
-        print("Predicting ...", flush=True)
-        y_pred = clf.predict(X_unlabeled)
-        y_pred_proba = clf.predict_proba(X_unlabeled)
-
-        print(Counter(y_pred), flush=True)
-        df = pd.DataFrame()
-        df["TextID"] = list_of_TextIDs
-        df["URL"] = list_of_URLs
-        df["Language"] = language
-        df["PredictedLabels"] = y_pred
-        df_proba = pd.DataFrame(
-            y_pred_proba, columns=["Probability_0", "Probability_1"]
-        )
-        df = pd.concat([df, df_proba], axis=1)
-
-        Path("results/classification/").mkdir(parents=True, exist_ok=True)
-        df.to_csv("results/classification/classification_" + language + "_" + crawl + ".csv")
-        return df
-
-    print("Start time of policy detection: ", str(datetime.datetime.now()), flush=True)
-
-    storage = CachingMiddleware(JSONStorage)
-    storage.WRITE_CACHE_SIZE = 25
-    db = TinyDB(
-        os.path.join(data_dir, "CPRA_policies_database_" + crawl + ".json"),
-        storage=storage
-    )
-    label_table = db.table("policies_labels")
-
-    list_of_languages = ["de", "en"]
-
-    for language in tqdm(list_of_languages, unit="language"):
-        print(f"Loading keyphrases of {language}", flush=True)
-        (
-            list_of_TextIDs,
-            list_of_URLs,
-            list_of_lists_of_keyphrases,
-        ) = load_keyphrases(db, language)
-        list_of_dict_keyphrases = keyphrase_analyzer(list_of_lists_of_keyphrases)
-
-        if len(list_of_TextIDs) > 0:
-            df_labels = label_determination(
-                language, list_of_dict_keyphrases, list_of_TextIDs, list_of_URLs
-            )
-        else:
-            print("No data for language", language, flush=True)
-        list_of_dicts_with_label = df_labels.to_dict("records")
-        del df_labels
-        for dict_with_label in list_of_dicts_with_label:
-            label_table.upsert(dict_with_label, tinydb_where("TextID") == dict_with_label["TextID"])
-
-    db.close()
-    print("End time: ", str(datetime.datetime.now()), flush=True)
 
 if __name__ == "__main__":
-    text_extraction_module()
-    language_detection_module()
-    keyphrase_extraction_module()
-    policy_detection_module()
+    main()
